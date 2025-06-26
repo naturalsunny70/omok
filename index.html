@@ -32,10 +32,17 @@
   #controls {
     margin-bottom: 15px;
     display: flex;
-    /* flex-wrap: wrap; */ /* Removed to prevent line breaks for selects */
+    flex-direction: column; /* Changed to column for stacking */
     justify-content: center;
     align-items: center;
-    gap: 10px;
+    gap: 10px; /* Space between rows */
+  }
+  #controls .row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px; /* Space between items in a row */
+    margin-bottom: 5px; /* Add some space between control rows */
   }
   button, select {
     font-size: 16px;
@@ -114,20 +121,26 @@
 <h1>오목 AI</h1>
 <div id="turn-indicator"></div>
 <div id="controls">
-  <label for="playerColor">내 돌 색상:</label>
-  <select id="playerColor">
-    <option value="black">흑돌 (선공)</option>
-    <option value="white">백돌 (후공)</option>
-  </select>
-  <label for="boardSize">바둑판 크기:</label>
-  <select id="boardSize">
-    <option value="19">19x19</option>
-    <option value="15">15x15</option>
-    <option value="13" selected>13x13</option>
-    <option value="10">10x10</option>
-  </select>
-  <button id="undoBtn">무르기</button>
-  <button id="resetBtn">새 게임 시작</button>
+  <div class="row">
+    <label for="playerColor">내 돌 색상:</label>
+    <select id="playerColor">
+      <option value="black">흑돌 (선공)</option>
+      <option value="white">백돌 (후공)</option>
+    </select>
+  </div>
+  <div class="row">
+    <label for="boardSize">바둑판 크기:</label>
+    <select id="boardSize">
+      <option value="19">19x19</option>
+      <option value="15">15x15</option>
+      <option value="13" selected>13x13</option>
+      <option value="10">10x10</option>
+    </select>
+  </div>
+  <div class="row">
+    <button id="undoBtn">무르기</button>
+    <button id="resetBtn">새 게임 시작</button>
+  </div>
 </div>
 <canvas id="board" width="760" height="760"></canvas>
 
