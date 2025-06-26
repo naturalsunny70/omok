@@ -212,7 +212,7 @@
     } else if (size === 13) {
         starPoints = [3, 6, 9];
     } else if (size === 10) {
-        starPoints = [2, 7]; // For 10x10, placing points at (2,2), (2,7), (7,2), (7,7)
+        starPoints = [2, 7]; 
     }
     
     ctx.fillStyle = '#553c23';
@@ -289,14 +289,15 @@
 
   function undo() {
     if (gameOver) return;
-    const movesToUndo = (history.length > 1 && playerColor !== currentPlayer) ? 2 : 1;
+    const movesToUndo = (currentPlayer === playerColor && history.length >= 2) ? 2 : 1; 
+    
     if (history.length < movesToUndo) return;
 
     for (let i = 0; i < movesToUndo; i++) {
         const lastMove = history.pop();
         if (lastMove) board[lastMove.y][lastMove.x] = null;
     }
-    currentPlayer = playerColor;
+    currentPlayer = playerColor; // 항상 플레이어 턴으로 되돌림
     gameOver = false;
     drawBoard();
   }
