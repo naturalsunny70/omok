@@ -127,19 +127,17 @@
       <option value="black">흑돌 (선공)</option>
       <option value="white">백돌 (후공)</option>
     </select>
+    <button id="undoBtn">무르기</button>
   </div>
   <div class="row">
-    <label for="boardSize">바둑판 크기:</label>
+    <label for="boardSize">바둑판 크기 선택:</label>
     <select id="boardSize">
       <option value="19">19x19</option>
       <option value="15">15x15</option>
-      <option value="13" selected>13x13</option>
-      <option value="10">10x10</option>
+      <option value="13">13x13</option>
+      <option value="10" selected>10x10</option>
     </select>
-  </div>
-  <div class="row">
-    <button id="undoBtn">무르기</button>
-    <button id="resetBtn">새 게임 시작</button>
+    <button id="resetBtn">새 게임</button>
   </div>
 </div>
 <canvas id="board" width="760" height="760"></canvas>
@@ -255,13 +253,13 @@
       }
     }
 
-    // AI가 마지막으로 둔 돌에 마커 그리기
-    if (history.length > 0) {
-      const lastMove = history[history.length - 1];
-      if (lastMove.color === aiColor && currentPlayer === playerColor) { // AI가 둔 마지막 돌이고 현재 플레이어 턴일 때
-        drawMarker(lastMove.x, lastMove.y, aiColor);
-      }
-    }
+    // AI가 마지막으로 둔 돌에 마커 그리기 (삭제)
+    // if (history.length > 0) {
+    //   const lastMove = history[history.length - 1];
+    //   if (lastMove.color === aiColor && currentPlayer === playerColor) {
+    //     drawMarker(lastMove.x, lastMove.y, aiColor);
+    //   }
+    // }
 
     updateTurnIndicator(); 
   }
@@ -282,21 +280,21 @@
     ctx.fill();
   }
 
-  // AI가 둔 마지막 돌에 역삼각형 마커를 그리는 함수
-  function drawMarker(x, y, stoneColor) {
-    const cx = (x + 0.5) * cellSize;
-    const cy = (y + 0.5) * cellSize;
-    const markerSize = cellSize / 4; 
+  // AI가 둔 마지막 돌에 역삼각형 마커를 그리는 함수 (삭제)
+  // function drawMarker(x, y, stoneColor) {
+  //   const cx = (x + 0.5) * cellSize;
+  //   const cy = (y + 0.5) * cellSize;
+  //   const markerSize = cellSize / 4; 
 
-    ctx.beginPath();
-    ctx.moveTo(cx - markerSize, cy - markerSize / 2);
-    ctx.lineTo(cx + markerSize, cy - markerSize / 2);
-    ctx.lineTo(cx, cy + markerSize);
-    ctx.closePath();
+  //   ctx.beginPath();
+  //   ctx.moveTo(cx - markerSize, cy - markerSize / 2);
+  //   ctx.lineTo(cx + markerSize, cy - markerSize / 2);
+  //   ctx.lineTo(cx, cy + markerSize);
+  //   ctx.closePath();
 
-    ctx.fillStyle = (stoneColor === 'black') ? 'white' : 'black'; // 돌 색상에 따라 마커 색상 변경
-    ctx.fill();
-  }
+  //   ctx.fillStyle = (stoneColor === 'black') ? 'white' : 'black';
+  //   ctx.fill();
+  // }
 
   // --- 게임 로직 ---
 
