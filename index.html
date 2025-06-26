@@ -254,12 +254,6 @@
     }
 
     // AI가 마지막으로 둔 돌에 마커 그리기 (삭제)
-    // if (history.length > 0) {
-    //   const lastMove = history[history.length - 1];
-    //   if (lastMove.color === aiColor && currentPlayer === playerColor) {
-    //     drawMarker(lastMove.x, lastMove.y, aiColor);
-    //   }
-    // }
 
     updateTurnIndicator(); 
   }
@@ -281,20 +275,6 @@
   }
 
   // AI가 둔 마지막 돌에 역삼각형 마커를 그리는 함수 (삭제)
-  // function drawMarker(x, y, stoneColor) {
-  //   const cx = (x + 0.5) * cellSize;
-  //   const cy = (y + 0.5) * cellSize;
-  //   const markerSize = cellSize / 4; 
-
-  //   ctx.beginPath();
-  //   ctx.moveTo(cx - markerSize, cy - markerSize / 2);
-  //   ctx.lineTo(cx + markerSize, cy - markerSize / 2);
-  //   ctx.lineTo(cx, cy + markerSize);
-  //   ctx.closePath();
-
-  //   ctx.fillStyle = (stoneColor === 'black') ? 'white' : 'black';
-  //   ctx.fill();
-  // }
 
   // --- 게임 로직 ---
 
@@ -484,7 +464,7 @@
 
     let bestMove = candidateMoves[0]; // 초기 최선의 수를 첫 번째 후보로 설정
     
-    // 즉각적인 승리 또는 상대방의 승리 방지 수 우선 확인
+    // AI의 즉각적인 승리 확인
     for(const move of candidateMoves){
         const testBoard = board.map(row => row.slice());
         testBoard[move.y][move.x] = aiColor;
@@ -492,9 +472,11 @@
             return placeAndCheckWin(move.x, move.y, aiColor); // AI가 이기는 수 발견 시 즉시 착수
         }
     }
+
+    // 플레이어의 즉각적인 승리 방지 최우선
     for(const move of candidateMoves){
         const testBoard = board.map(row => row.slice());
-        testBoard[move.y][move.x] = playerColor;
+        testBoard[move.y][move.x] = playerColor; // 플레이어가 이 위치에 두면 어떻게 되는지 시뮬레이션
         if(isWinBoard(testBoard, move.x, move.y, playerColor)){
             bestMove = move; // 상대방의 승리를 막는 수 발견 시, 그 수를 최선으로 설정 후 착수
             return placeAndCheckWin(bestMove.x, bestMove.y, aiColor);
