@@ -369,10 +369,26 @@
   }
 
   // --- AI 로직 ---
-  // (기존 AI 로직 함수들은 공간을 위해 축약함)
   isWinBoard=function(b,x,y,c){for(const[dx,dy]of directions){let n=1;for(let i=1;i<5;i++){if(b[y+dy*i]?.[x+dx*i]===c)n++;else break}for(let i=1;i<5;i++){if(b[y-dy*i]?.[x-dx*i]===c)n++;else break}if(n>=5)return!0}return!1};
   generateMoves=function(b){const m=[],h=b.some(r=>r.some(c=>c!==null));if(!h)return m.push({x:Math.floor(size/2),y:Math.floor(size/2)}),m;const s=new Set;for(let y=0;y<size;y++)for(let x=0;x<size;x++){if(b[y][x]===null)continue;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){if(dx===0&&dy===0)continue;const nx=x+dx,ny=y+dy;if(canPlace(nx,ny)&&b[ny][nx]===null)s.add(`${nx},${ny}`)}}return s.forEach(v=>{const[x,y]=v.split(',').map(Number);m.push({x,y})}),m};
-  evaluateLine=function(l){let s=0;const a=l.filter(c=>c===aiColor).length,p=l.filter(c=>c===playerColor).length,e=l.filter(c=>c===null).length;return a===4&&e===1?s+=1e4:a===3&&e===2?s+=1e3:a===2&&e===3&&(s+=100),p===4&&e===1?s-=2e4:p===3&&e==='2'?s-=5e3:p===2&&e===3&&(s-=200),s};
+  
+  evaluateLine=function(l){
+    let s=0;
+    const a=l.filter(c=>c===aiColor).length;
+    const p=l.filter(c=>c===playerColor).length;
+    const e=l.filter(c=>c===null).length;
+
+    // AI threats
+    if (a === 4 && e === 1) s += 1e4; // AI Open 4 (can win in 1 move)
+    if (a === 3 && e === 2) s += 1e3; // AI Open 3 (can make 4 with 2 empty spaces)
+
+    // Player threats (prioritize blocking)
+    // "막힌4" (blocked four) and "오픈4" (open four) are considered here as any 4 player stones with 1 empty space in a 5-cell line.
+    if (p === 4 && e === 1) s -= 9e5; // Player Open/Blocked Four (VERY HIGH priority to block)
+    if (p === 3 && e === 2) s -= 5e4; // Player Open 3 (HIGH priority to block)
+
+    return s;
+  };
   evaluateBoard=function(b){let t=0;for(let i=0;i<size;i++)for(let j=0;j<size-4;j++)t+=evaluateLine(b[i].slice(j,j+5)),t+=evaluateLine([b[j][i],b[j+1][i],b[j+2][i],b[j+3][i],b[j+4][i]]);for(let i=0;i<size-4;i++)for(let j=0;j<size-4;j++)t+=evaluateLine([b[i][j],b[i+1][j+1],b[i+2][j+2],b[i+3][j+3],b[i+4][j+4]]),t+=evaluateLine([b[i+4][j],b[i+3][j+1],b[i+2][j+2],b[i+1][j+3],b[i][j+4]]);return t};
   
   // minimax 시간 제한을 동적으로 변경
@@ -402,10 +418,56 @@
       return e
     }
   };
-  
+
+  /**
+   * Check if the player has a forced win (open four or double three)
+   * This function needs to iterate through all possible immediate winning moves (open 4)
+   * and detect double 3s which are also forced wins.
+   * A simplified approach for double 3: if placing a stone on multiple spots leads to a win.
+   */
+  function hasForcedWin(currentBoard, playerColorToCheck) {
+      let immediateWinningMovesCount = 0;
+      const potentialMoves = generateMoves(currentBoard); // Get all empty spots
+
+      for (const move of potentialMoves) {
+          const tempBoard = currentBoard.map(row => row.slice());
+          tempBoard[move.y][move.x] = playerColorToCheck;
+          if (isWinBoard(tempBoard, move.x, move.y, playerColorToCheck)) {
+              immediateWinningMovesCount++;
+          }
+      }
+
+      // If player has one open four, it's a win.
+      // If player has two or more distinct immediate winning moves (double-4), it's a forced win.
+      // This covers the "오픈4" and critical "막힌4" (those that become an immediate win).
+      if (immediateWinningMovesCount >= 1) return true; // Player can win in one move.
+      
+      // For "더블 쓰리" (double three), it's more complex. A simple count of open threes
+      // is not enough to guarantee a double three. This often requires simulating player moves
+      // and checking if they lead to multiple win threats.
+      // Given the current structure, a full double-three detection is beyond `hasForcedWin` scope without a deeper search.
+      // However, the `evaluateLine` scoring for open three (`s -= 5e4`) should help AI block them.
+
+      // For a simple surrender rule, let's consider only immediate winning moves (open fours) or double fours.
+      // The `immediateWinningMovesCount` being >= 1 already means player has at least one open four equivalent.
+      // If `immediateWinningMovesCount >= 2` it implies a double four.
+      // So, if player has any way to win immediately, AI surrenders.
+      return false; // No forced win detected for the player
+  }
+
+
   // aiMove 함수를 반복적 깊이 확장을 사용하고 동적 시간 제한 적용
   aiMove=function(){
-    if(gameOver)return;
+    if (gameOver) return;
+
+    // AI Surrender Rule: Check if player has an unblockable winning threat (open 4 or double 3)
+    if (hasForcedWin(board, playerColor)) {
+        showMessage("AI 항복: 플레이어가 필승수를 가지고 있습니다!");
+        gameOver = true;
+        updateTurnIndicator();
+        return; // AI surrenders
+    }
+
     const startTime=Date.now(); // AI 턴 시작 시간 기록
     const candidateMoves=generateMoves(board); // 가능한 모든 수 생성
     if(candidateMoves.length===0)return showMessage("무승부!"),void(gameOver=!0);
