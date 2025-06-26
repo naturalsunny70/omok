@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>오목 </title>
+<style>
+  body { text-align:center; font-family: sans-serif; background:#f0e6d2; }
+  canvas { background:#deb887; margin:20px auto; display:block; box-shadow:0 0 10px rgba(0,0,0,0.3); touch-action: manipulation; }
+  #controls { margin-bottom:10px; }
+  button, select { font-size:16px; margin:5px; padding:6px 12px; }
+</style>
+</head>
+<body>
+<h1>오목 </h1>
+<div id="controls">
+  <label for="playerColor">플레이어 돌 색상: </label>
+  <select id="playerColor">
+    <option value="black">흑돌 (선)</option>
+    <option value="white">백돌 (후)</option>
+  </select>
+  <button id="undoBtn">무르기</button>
+  <button id="resetBtn">재시작</button>
+</div>
+<canvas id="board" width="760" height="760"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const size = 19;
+  const cellSize = canvas.width / size;
+  let board = Array.from({ length: size }, () => Array(size).fill(null));
+  let history = [];
+  let currentPlayer = 'black'; 
+  let gameOver = false;
+  let playerColor = 'black'; 
+  let aiColor = 'white';
+
+  const directions = [[1,0],[0,1],[1,1],[1,-1]];
+
+  const playerColorSelect = document.getElementById('playerColor');
+  playerColorSelect.addEventListener('change', () => {
+    playerColor = playerColorSelect.value;
+    aiColor = playerColor === 'black' ? 'white' : 'black';
+    resetGame();
+  });
+
+  function drawBoard() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    for(let i=0; i<size; i++) {
+      // 가로선
+      ctx.beginPath();
+      ctx.moveTo(cellSize/2, cellSize/2 + i*cellSize);
+      ctx.lineTo(canvas.width - cellSize/2, cellSize/2 + i*cellSize);
+      ctx.stroke();
+      // 세로선
+      ctx.beginPath();
+      ctx.moveTo(cellSize/2 + i*cellSize, cellSize/2);
+      ctx.lineTo(cellSize/2 + i*cellSize, canvas.height - cellSize/2);
+      ctx.stroke();
+    }
+    // 별점 (흑점) 3개 그리기
+    const starPoints = [3, 9, 15];
+    starPoints.forEach(x => {
+      starPoints.forEach(y => {
+        ctx.beginPath();
+        ctx.arc(cellSize/2 + x*cellSize, cellSize/2 + y*cellSize, 5, 0, Math.PI*2);
+        ctx.fillStyle = '#555';
+        ctx.fill();
+      });
+    });
+
+    for(let y=0; y<size; y++) {
+      for(let x=0; x<size; x++) {
+        if(board[y][x]) drawStone(x, y, board[y][x]);
+      }
+    }
+  }
+
+  function drawStone(x, y, color) {
+    ctx.beginPath();
+    ctx.arc((x+0.5)*cellSize, (y+0.5)*cellSize, cellSize/2.7, 0, Math.PI*2);
+    const gradient = ctx.createRadialGradient((x+0.5)*cellSize, (y+0.5)*cellSize, cellSize/8,
+                                              (x+0.5)*cellSize, (y+0.5)*cellSize, cellSize/2.7);
+    if(color === 'black') {
+      gradient.addColorStop(0, '#555');
+      gradient.addColorStop(1, '#000');
+      ctx.fillStyle = gradient;
+    } else {
+      gradient.addColorStop(0, '#fff');
+      gradient.addColorStop(1, '#ccc');
+      ctx.fillStyle = gradient;
+      ctx.shadowColor = 'rgba(0,0,0,0.2)';
+      ctx.shadowBlur = 4;
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  function canPlace(x,y) {
+    if(x<0 || y<0 || x>=size || y>=size) return false;
+    return !board[y][x];
+  }
+
+  function placeStone(x,y,color) {
+    if(!canPlace(x,y) || gameOver) return false;
+    board[y][x] = color;
+    history.push({x,y,color});
+    drawBoard();
+    return true;
+  }
+
+  function undo() {
+    if(history.length === 0 || gameOver) return;
+    let last = history.pop();
+    board[last.y][last.x] = null;
+    if(currentPlayer === aiColor && history.length > 0) {
+      last = history.pop();
+      if(last) board[last.y][last.x] = null;
+    }
+    currentPlayer = playerColor;
+    gameOver = false;
+    drawBoard();
+  }
+
+  function checkWin(x, y) {
+    const color = board[y][x];
+    if (!color) return false;
+    for (const [dx,dy] of directions) {
+      let count = 1;
+      for(let d=1; d<5; d++) {
+        const nx = x + dx*d, ny = y + dy*d;
+        if(board[ny]?.[nx] === color) count++;
+        else break;
+      }
+      for(let d=1; d<5; d++) {
+        const nx = x - dx*d, ny = y - dy*d;
+        if(board[ny]?.[nx] === color) count++;
+        else break;
+      }
+      if(count >= 5) return true;
+    }
+    return false;
+  }
+
+  // AI 보조 함수들
+
+  // 열린3 판별 - 간단하게 좌우 한쪽만 막힌 3돌 (엄밀하지 않음)
+  function isOpenThree(x,y,color,boardState) {
+    // directions 검사
+    for(const [dx,dy] of directions) {
+      let count=1;
+      let blocked = 0;
+      // 앞쪽
+      for(let i=1; i<4; i++) {
+        const nx = x + dx*i;
+        const ny = y + dy*i;
+        if(nx<0 || ny<0 || nx>=size || ny>=size) {
+          blocked++;
+          break;
+        }
+        if(boardState[ny][nx] === color) count++;
+        else if(boardState[ny][nx] === null) break;
+        else {
+          blocked++;
+          break;
+        }
+      }
+      // 뒤쪽
+      for(let i=1; i<4; i++) {
+        const nx = x - dx*i;
+        const ny = y - dy*i;
+        if(nx<0 || ny<0 || nx>=size || ny>=size) {
+          blocked++;
+          break;
+        }
+        if(boardState[ny][nx] === color) count++;
+        else if(boardState[ny][nx] === null) break;
+        else {
+          blocked++;
+          break;
+        }
+      }
+      if(count === 3 && blocked === 1) return true;
+    }
+    return false;
+  }
+
+  // 열린4 판별 (4돌, 양쪽 막힌 곳 개수 체크)
+  function isOpenFour(x,y,color,boardState) {
+    for(const [dx,dy] of directions) {
+      let count = 1;
+      let blocked = 0;
+      for(let i=1; i<5; i++) {
+        const nx = x + dx*i;
+        const ny = y + dy*i;
+        if(nx<0 || ny<0 || nx>=size || ny>=size) {
+          blocked++;
+          break;
+        }
+        if(boardState[ny][nx] === color) count++;
+        else if(boardState[ny][nx] === null) break;
+        else {
+          blocked++;
+          break;
+        }
+      }
+      for(let i=1; i<5; i++) {
+        const nx = x - dx*i;
+        const ny = y - dy*i;
+        if(nx<0 || ny<0 || nx>=size || ny>=size) {
+          blocked++;
+          break;
+        }
+        if(boardState[ny][nx] === color) count++;
+        else if(boardState[ny][nx] === null) break;
+        else {
+          blocked++;
+          break;
+        }
+      }
+      if(count === 4 && blocked < 2) return true;
+    }
+    return false;
+  }
+
+  // 점수 평가 함수
+  function evaluateBoard(boardState, color) {
+    const opponent = (color === 'black') ? 'white' : 'black';
+    let score = 0;
+
+    for(let y=0; y<size; y++) {
+      for(let x=0; x<size; x++) {
+        if(boardState[y][x] === color) {
+          // 내 돌: 열린4 높은 점수, 열린3 중간 점수, 5연승 매우 높은 점수
+          if(isOpenFour(x,y,color,boardState)) score += 10000;
+          else if(isOpenThree(x,y,color,boardState)) score += 1000;
+          // 추가 평가 가능
+        }
+        else if(boardState[y][x] === opponent) {
+          // 상대 돌: 열린4 매우 높은 위협점, 열린3 위협 점수
+          if(isOpenFour(x,y,opponent,boardState)) score -= 20000;
+          else if(isOpenThree(x,y,opponent,boardState)) score -= 5000;
+        }
+      }
+    }
+
+    return score;
+  }
+
+  // 승리 체크 (5연속)
+  function isWinBoard(boardState,x,y,color) {
+    for(const [dx,dy] of directions) {
+      let count=1;
+      for(let i=1; i<5; i++) {
+        const nx = x+dx*i;
+        const ny = y+dy*i;
+        if(nx<0 || ny<0 || nx>=size || ny>=size) break;
+        if(boardState[ny][nx] === color) count++;
+        else break;
+      }
+      for(let i=1; i<5; i++) {
+        const nx = x-dx*i;
+        const ny = y-dy*i;
+        if(nx<0 || ny<0 || nx>=size || ny>=size) break;
+        if(boardState[ny][nx] === color) count++;
+        else break;
+      }
+      if(count >= 5) return true;
+    }
+    return false;
+  }
+
+  // 후보 수 생성 (주변 2칸 이내 돌이 있는 빈 곳)
+  function generateMoves(boardState) {
+    const moves = [];
+    for(let y=0; y<size; y++) {
+      for(let x=0; x<size; x++) {
+        if(boardState[y][x] === null) {
+          let hasNeighbor = false;
+          for(let dy=-2; dy<=2; dy++) {
+            for(let dx=-2; dx<=2; dx++) {
+              const nx = x + dx;
+              const ny = y + dy;
+              if(nx<0 || ny<0 || nx>=size || ny>=size) continue;
+              if(boardState[ny][nx] !== null) hasNeighbor = true;
+            }
+          }
+          if(hasNeighbor) moves.push({x,y});
+        }
+      }
+    }
+    if(moves.length === 0) { // 완전 빈판이면 전부 후보
+      for(let y=0; y<size; y++) {
+        for(let x=0; x<size; x++) {
+          if(boardState[y][x] === null) moves.push({x,y});
+        }
+      }
+    }
+    return moves;
+  }
+
+  // AI 미니맥스(알파베타) 탐색 (depth 3, 5초 시간 제한)
+  function minimax(boardState, depth, alpha, beta, maximizing, aiColor, startTime) {
+    if(depth === 0 || (Date.now() - startTime) > 4800) {
+      return evaluateBoard(boardState, aiColor);
+    }
+    const opponent = (aiColor === 'black') ? 'white' : 'black';
+    const currentColor = maximizing ? aiColor : opponent;
+    const moves = generateMoves(boardState);
+
+    if(moves.length === 0) return 0;
+
+    if(maximizing) {
+      let maxEval = -Infinity;
+      for(const move of moves) {
+        const newBoard = boardState.map(r => r.slice());
+        newBoard[move.y][move.x] = currentColor;
+        if(isWinBoard(newBoard, move.x, move.y, currentColor)) return 1000000;
+        const eval = minimax(newBoard, depth-1, alpha, beta, false, aiColor, startTime);
+        if(eval > maxEval) maxEval = eval;
+        if(eval > alpha) alpha = eval;
+        if(beta <= alpha) break;
+      }
+      return maxEval;
+    } else {
+      let minEval = Infinity;
+      for(const move of moves) {
+        const newBoard = boardState.map(r => r.slice());
+        newBoard[move.y][move.x] = currentColor;
+        if(isWinBoard(newBoard, move.x, move.y, currentColor)) return -1000000;
+        const eval = minimax(newBoard, depth-1, alpha, beta, true, aiColor, startTime);
+        if(eval < minEval) minEval = eval;
+        if(eval < beta) beta = eval;
+        if(beta <= alpha) break;
+      }
+      return minEval;
+    }
+  }
+
+  // AI 착수 함수 (depth 3 미니맥스)
+  function aiMove() {
+    if(gameOver) return;
+    const moves = generateMoves(board);
+    let bestScore = -Infinity;
+    let bestMove = null;
+    const startTime = Date.now();
+
+    for(const move of moves) {
+      const newBoard = board.map(r => r.slice());
+      newBoard[move.y][move.x] = aiColor;
+      if(isWinBoard(newBoard, move.x, move.y, aiColor)) {
+        bestMove = move;
+        break;
+      }
+    }
+    if(bestMove) {
+      placeStone(bestMove.x, bestMove.y, aiColor);
+      if(checkWin(bestMove.x, bestMove.y)) {
+        alert("AI 승리!");
+        gameOver = true;
+      } else {
+        currentPlayer = playerColor;
+      }
+      return;
+    }
+
+    // 상대가 열린4나 열린3 위협을 먼저 차단
+    for(const move of moves) {
+      const newBoard = board.map(r => r.slice());
+      newBoard[move.y][move.x] = playerColor;
+      if(isOpenFour(move.x, move.y, playerColor, newBoard) || isOpenThree(move.x, move.y, playerColor, newBoard)) {
+        // 막아주기 확률 75%
+        if(Math.random() < 0.75) {
+          placeStone(move.x, move.y, aiColor);
+          currentPlayer = playerColor;
+          return;
+        }
+      }
+    }
+
+    // 미니맥스 탐색 시작
+    for(const move of moves) {
+      const newBoard = board.map(r => r.slice());
+      newBoard[move.y][move.x] = aiColor;
+      const score = minimax(newBoard, 3, -Infinity, Infinity, false, aiColor, startTime);
+      if(score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+    }
+
+    if(bestMove) {
+      placeStone(bestMove.x, bestMove.y, aiColor);
+      if(checkWin(bestMove.x, bestMove.y)) {
+        alert("AI 승리!");
+        gameOver = true;
+      } else {
+        currentPlayer = playerColor;
+      }
+    } else {
+      alert("무승부!");
+      gameOver = true;
+    }
+  }
+
+  function handleClick(e) {
+    if(gameOver) return;
+    const rect = canvas.getBoundingClientRect();
+    let x, y;
+    if(e.touches) {
+      x = e.touches[0].clientX - rect.left;
+      y = e.touches[0].clientY - rect.top;
+    } else {
+      x = e.offsetX;
+      y = e.offsetY;
+    }
+    const cx = Math.floor(x / cellSize);
+    const cy = Math.floor(y / cellSize);
+    if(!canPlace(cx,cy)) return;
+    if(currentPlayer !== playerColor) return; // 내턴이 아니면 무시
+
+    placeStone(cx, cy, playerColor);
+    if(checkWin(cx, cy)) {
+      alert("플레이어 승리!");
+      gameOver = true;
+      return;
+    }
+    currentPlayer = aiColor;
+    setTimeout(aiMove, 100);
+  }
+
+  canvas.addEventListener('mousedown', handleClick);
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    handleClick(e);
+  }, {passive:false});
+
+  document.getElementById('undoBtn').addEventListener('click', () => {
+    undo();
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    resetGame();
+  });
+
+  function resetGame() {
+    board = Array.from({ length: size }, () => Array(size).fill(null));
+    history = [];
+    gameOver = false;
+    currentPlayer = 'black';
+    drawBoard();
+
+    if(playerColor === 'white') {
+      currentPlayer = 'black';
+      setTimeout(aiMove, 300);
+    }
+  }
+
+  resetGame();
+})();
+</script>
+</body>
+</html>
