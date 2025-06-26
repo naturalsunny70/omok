@@ -29,6 +29,7 @@
     <option value="black">흑돌 (선)</option>
     <option value="white">백돌 (후)</option>
   </select>
+  <button id="fitScreenBtn" style="display:none;">화면조정</button>
   <button id="undoBtn">무르기</button>
   <button id="resetBtn">재시작</button>
 </div>
@@ -46,6 +47,31 @@
   let gameOver = false;
   let playerColor = 'black'; 
   let aiColor = 'white';
+
+const fitScreenBtn = document.getElementById('fitScreenBtn');
+
+function isMobile() {
+  return /Mobi|Android/i.test(navigator.userAgent);
+}
+
+// 모바일이면 버튼 표시
+if(isMobile()) {
+  fitScreenBtn.style.display = 'inline-block';  // 버튼 보임
+  fitScreen();                                  // 자동 축소 실행
+}
+
+
+
+// 축소 함수
+function fitScreen() {
+  const scale = Math.min(window.innerWidth * 0.95 / 760, 1);
+  canvas.style.transformOrigin = 'top left';
+  canvas.style.transform = `scale(${scale})`;
+}
+
+fitScreenBtn.addEventListener('click', fitScreen);
+
+
 
   const directions = [[1,0],[0,1],[1,1],[1,-1]];
 
