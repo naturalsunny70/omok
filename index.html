@@ -6,7 +6,17 @@
 <title>오목 </title>
 <style>
   body { text-align:center; font-family: sans-serif; background:#f0e6d2; }
-  canvas { background:#deb887; margin:20px auto; display:block; box-shadow:0 0 10px rgba(0,0,0,0.3); touch-action: manipulation; }
+  canvas {
+  width: 100%;
+  max-width: 760px;
+  height: auto;
+  background:#deb887;
+  margin:20px auto;
+  display:block;
+  box-shadow:0 0 10px rgba(0,0,0,0.3);
+  touch-action: manipulation;
+}
+
   #controls { margin-bottom:10px; }
   button, select { font-size:16px; margin:5px; padding:6px 12px; }
 </style>
@@ -44,9 +54,30 @@
     playerColor = playerColorSelect.value;
     aiColor = playerColor === 'black' ? 'white' : 'black';
     resetGame();
+
+window.addEventListener('resize', drawBoard);
+
   });
 
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * window.devicePixelRatio;
+  canvas.height = rect.width * window.devicePixelRatio;  // 정사각형 유지
+  ctx.setTransform(1, 0, 0, 1, 0, 0); // 변환 초기화
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+}
+
+
+
+
+
+
+
   function drawBoard() {
+    
+    resizeCanvas();
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.strokeStyle = '#555';
     ctx.lineWidth = 1;
