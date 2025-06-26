@@ -253,7 +253,13 @@
       }
     }
 
-    // AI가 마지막으로 둔 돌에 마커 그리기 (삭제)
+    // AI가 마지막으로 둔 돌에 마커 그리기
+    if (history.length > 0) {
+      const lastMove = history[history.length - 1];
+      if (lastMove.color === aiColor && currentPlayer === playerColor) { // AI가 둔 마지막 돌이고 현재 플레이어 턴일 때
+        drawMarker(lastMove.x, lastMove.y, aiColor);
+      }
+    }
 
     updateTurnIndicator(); 
   }
@@ -274,7 +280,21 @@
     ctx.fill();
   }
 
-  // AI가 둔 마지막 돌에 역삼각형 마커를 그리는 함수 (삭제)
+  // AI가 둔 마지막 돌에 역삼각형 마커를 그리는 함수
+  function drawMarker(x, y, stoneColor) {
+    const cx = (x + 0.5) * cellSize;
+    const cy = (y + 0.5) * cellSize;
+    const markerSize = cellSize / 4; 
+
+    ctx.beginPath();
+    ctx.moveTo(cx - markerSize, cy - markerSize / 2);
+    ctx.lineTo(cx + markerSize, cy - markerSize / 2);
+    ctx.lineTo(cx, cy + markerSize);
+    ctx.closePath();
+
+    ctx.fillStyle = (stoneColor === 'black') ? 'white' : 'black'; // 돌 색상에 따라 마커 색상 변경
+    ctx.fill();
+  }
 
   // --- 게임 로직 ---
 
