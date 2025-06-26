@@ -297,7 +297,7 @@
         const lastMove = history.pop();
         if (lastMove) board[lastMove.y][lastMove.x] = null;
     }
-    currentPlayer = playerColor; // 항상 플레이어 턴으로 되돌림
+    currentPlayer = playerColor; 
     gameOver = false;
     drawBoard();
   }
@@ -332,13 +332,189 @@
       }
   }
 
-  // --- AI 로직 (이전과 동일) ---
-  function isWinBoard(boardState, x, y, color) { /* ... */ }
-  function generateMoves(boardState) { /* ... */ }
-  function evaluateLine(line) { /* ... */ }
-  function evaluateBoard(boardState) { /* ... */ }
-  function minimax(boardState, depth, alpha, beta, maximizing, startTime) { /* ... */ }
-  function aiMove() { /* ... */ }
+  // --- AI 로직 ---
+  // (기존 AI 로직 함수들은 공간을 위해 축약함)
+  isWinBoard=function(b,x,y,c){for(const[dx,dy]of directions){let n=1;for(let i=1;i<5;i++){if(b[y+dy*i]?.[x+dx*i]===c)n++;else break}for(let i=1;i<5;i++){if(b[y-dy*i]?.[x-dx*i]===c)n++;else break}if(n>=5)return!0}return!1};
+  generateMoves=function(b){const m=[],h=b.some(r=>r.some(c=>c!==null));if(!h)return m.push({x:Math.floor(size/2),y:Math.floor(size/2)}),m;const s=new Set;for(let y=0;y<size;y++)for(let x=0;x<size;x++){if(b[y][x]===null)continue;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){if(dx===0&&dy===0)continue;const nx=x+dx,ny=y+dy;if(canPlace(nx,ny)&&b[ny][nx]===null)s.add(`${nx},${ny}`)}}return s.forEach(v=>{const[x,y]=v.split(',').map(Number);m.push({x,y})}),m};
+  evaluateLine=function(l){let s=0;const a=l.filter(c=>c===aiColor).length,p=l.filter(c=>c===playerColor).length,e=l.filter(c=>c===null).length;return a===4&&e===1?s+=1e4:a===3&&e===2?s+=1e3:a===2&&e===3&&(s+=100),p===4&&e===1?s-=2e4:p===3&&e==='2'?s-=5e3:p===2&&e===3&&(s-=200),s};
+  evaluateBoard=function(b){let t=0;for(let i=0;i<size;i++)for(let j=0;j<size-4;j++)t+=evaluateLine(b[i].slice(j,j+5)),t+=evaluateLine([b[j][i],b[j+1][i],b[j+2][i],b[j+3][i],b[j+4][i]]);for(let i=0;i<size-4;i++)for(let j=0;j<size-4;j++)t+=evaluateLine([b[i][j],b[i+1][j+1],b[i+2][j+2],b[i+3][j+3],b[i+4][j+4]]),t+=evaluateLine([b[i+4][j],b[i+3][j+1],b[i+2][j+2],b[i+1][j+3],b[i][j+4]]);return t};
+  
+  // minimax 시간 제한을 동적으로 변경
+  minimax=function(b,d,alpha,beta,m,startTimeForAiMove, maxAllowedTimeForAiMove){
+    if(d===0 || Date.now() - startTimeForAiMove > maxAllowedTimeForAiMove) return evaluateBoard(b);
+    const v=generateMoves(b);
+    if(v.length===0)return 0;
+    if(m){
+      let e=-1/0;
+      for(const o of v){
+        const n=b.map(r=>r.slice());
+        if(n[o.y][o.x]=aiColor,isWinBoard(n,o.x,o.y,aiColor))return 1e6;
+        const c=minimax(n,d-1,alpha,beta,!1,startTimeForAiMove, maxAllowedTimeForAiMove);
+        e=Math.max(e,c),alpha=Math.max(alpha,c);
+        if(beta<=alpha)break
+      }
+      return e
+    }else{
+      let e=1/0;
+      for(const o of v){
+        const n=b.map(r=>r.slice());
+        if(n[o.y][o.x]=playerColor,isWinBoard(n,o.x,o.y,playerColor))return-1e6;
+        const c=minimax(n,d-1,alpha,beta,!0,startTimeForAiMove, maxAllowedTimeForAiMove);
+        e=Math.min(e,c),beta=Math.min(beta,c);
+        if(beta<=alpha)break
+      }
+      return e
+    }
+  };
+  
+  // aiMove 함수를 반복적 깊이 확장을 사용하고 동적 시간 제한 적용
+  aiMove=function(){
+    if(gameOver)return;
+    const startTime=Date.now(); // AI 턴 시작 시간 기록
+    const candidateMoves=generateMoves(board); // 가능한 모든 수 생성
+    if(candidateMoves.length===0)return showMessage("무승부!"),void(gameOver=!0);
+
+    let currentAIMoveTimeLimit; // AI 턴 전체에 할당된 시간 (ms)
+    const minimaxTimeBuffer = 500; // minimax 함수가 실제 탐색을 수행할 시간 (AI 턴 전체 시간 - 버퍼)
+
+    if (size === 10) {
+        currentAIMoveTimeLimit = 4000; // 10x10 보드는 4초 고정
+    } else {
+        const movesCount = history.length;
+        if (movesCount <= 5) {
+            currentAIMoveTimeLimit = 5000; // 초반 5수까지는 5초
+        } else if (movesCount <= 10) {
+            currentAIMoveTimeLimit = 7000; // 10수까지는 7초
+        } else {
+            currentAIMoveTimeLimit = 8000; // 그 이후는 8초
+        }
+    }
+    const minimaxAllowedTime = currentAIMoveTimeLimit - minimaxTimeBuffer;
+
+
+    // 13, 15, 19 격자에서 AI의 첫 2수 제한
+    if ((size === 13 || size === 15 || size === 19) && history.length <= 1) {
+      const center_x = Math.floor(size / 2);
+      const center_y = Math.floor(size / 2);
+      const range_radius = 2; // 중앙 5x5 범위 (중앙으로부터 2칸)
+      const min_cx = Math.max(0, center_x - range_radius);
+      const max_cx = Math.min(size - 1, center_x + range_radius);
+      const min_cy = Math.max(0, center_y - range_radius);
+      const max_cy = Math.min(size - 1, center_y + range_radius);
+
+      const isWithinCenterRange = (x, y) => {
+          return x >= min_cx && x <= max_cx && y >= min_cy && y <= max_cy;
+      };
+
+      // AI의 첫 착수 (AI가 흑돌, 보드가 비어있을 때)
+      if (history.length === 0 && aiColor === 'black') {
+          let centerMoves = [];
+          for (let y = min_cy; y <= max_cy; y++) {
+              for (let x = min_cx; x <= max_cx; x++) {
+                  if (canPlace(x, y)) {
+                      centerMoves.push({x, y});
+                  }
+              }
+          }
+          if (centerMoves.length > 0) {
+              // 정확한 중앙점을 우선 고려, 없으면 범위 내 랜덤 선택
+              const exactCenterMove = centerMoves.find(m => m.x === center_x && m.y === center_y);
+              let chosenMove = exactCenterMove || centerMoves[Math.floor(Math.random() * centerMoves.length)];
+              
+              return placeAndCheckWin(chosenMove.x, chosenMove.y, aiColor);
+          }
+      } 
+      // AI의 두 번째 착수 (플레이어가 첫 수를 두었고, AI가 백돌, 플레이어의 첫 수가 중앙 범위 내일 때)
+      else if (history.length === 1 && aiColor === 'white') {
+          const playerFirstMove = history[0];
+          if (isWithinCenterRange(playerFirstMove.x, playerFirstMove.y)) {
+              let centerMoves = [];
+              for (let y = min_cy; y <= max_cy; y++) {
+                  for (let x = min_cx; x <= max_cx; x++) {
+                      if (canPlace(x, y)) {
+                          centerMoves.push({x, y});
+                      }
+                  }
+              }
+              if (centerMoves.length > 0) {
+                  // 중앙 범위 내에서 랜덤하게 선택
+                  let chosenMove = centerMoves[Math.floor(Math.random() * centerMoves.length)];
+                  return placeAndCheckWin(chosenMove.x, chosenMove.y, aiColor);
+              }
+          }
+      }
+    }
+    // --- 첫 2수 제한 로직 끝 ---
+
+    let bestMove = candidateMoves[0]; // 초기 최선의 수를 첫 번째 후보로 설정
+    
+    // 즉각적인 승리 또는 상대방의 승리 방지 수 우선 확인
+    for(const move of candidateMoves){
+        const testBoard = board.map(row => row.slice());
+        testBoard[move.y][move.x] = aiColor;
+        if(isWinBoard(testBoard, move.x, move.y, aiColor)){
+            return placeAndCheckWin(move.x, move.y, aiColor); // AI가 이기는 수 발견 시 즉시 착수
+        }
+    }
+    for(const move of candidateMoves){
+        const testBoard = board.map(row => row.slice());
+        testBoard[move.y][move.x] = playerColor;
+        if(isWinBoard(testBoard, move.x, move.y, playerColor)){
+            bestMove = move; // 상대방의 승리를 막는 수 발견 시, 그 수를 최선으로 설정 후 착수
+            return placeAndCheckWin(bestMove.x, bestMove.y, aiColor);
+        }
+    }
+
+    let currentDepth = 1; // 탐색 시작 깊이
+    let lastValidBestMove = bestMove; // 마지막으로 성공적으로 탐색된 깊이에서의 최선수
+
+    // 반복적 깊이 확장 루프
+    // 동적으로 설정된 AI 턴 시간 내에서 가능한 한 깊이 탐색
+    while (Date.now() - startTime < currentAIMoveTimeLimit) { 
+        let bestScoreForCurrentDepth = -Infinity;
+        let bestMoveForCurrentDepth = null;
+        let anyMoveEvaluatedAtCurrentDepth = false; // 현재 깊이에서 어떤 수라도 평가되었는지
+
+        // 현재 깊이에서 모든 후보 수를 탐색
+        for (const move of candidateMoves) {
+            // 각 수 평가 전 전체 시간 제한 다시 확인
+            if (Date.now() - startTime > currentAIMoveTimeLimit) {
+                break; // 시간 초과 시 현재 깊이 탐색 중단
+            }
+
+            const tempBoard = board.map(row => row.slice());
+            tempBoard[move.y][move.x] = aiColor;
+            
+            // minimax 호출. (minimax 자체도 시간 제한이 있음)
+            const score = minimax(tempBoard, currentDepth - 1, -Infinity, Infinity, false, startTime, minimaxAllowedTime); 
+
+            if (score > bestScoreForCurrentDepth) {
+                bestScoreForCurrentDepth = score;
+                bestMoveForCurrentDepth = move;
+            }
+            anyMoveEvaluatedAtCurrentDepth = true;
+        }
+
+        if (!anyMoveEvaluatedAtCurrentDepth || (Date.now() - startTime > currentAIMoveTimeLimit && currentDepth > 1)) {
+             // 현재 깊이 탐색이 완료되지 않았거나 시간 초과 시, 마지막으로 완료된 깊이의 최선수 사용
+            break;
+        } else {
+            // 현재 깊이 탐색이 성공적으로 완료됨
+            if (bestMoveForCurrentDepth) {
+                lastValidBestMove = bestMoveForCurrentDepth; // 최선수 업데이트
+            }
+            currentDepth++; // 다음 반복에서 더 깊이 탐색
+            if (currentDepth > 5) { // 무한정 깊어지는 것을 방지하기 위한 최대 깊이 제한
+                break; 
+            }
+        }
+    }
+    
+    // 최종적으로 찾은 최선수에 착수 (시간 내에 아무것도 못 찾았을 경우 초기 후보수 사용)
+    bestMove = lastValidBestMove || candidateMoves[0]; 
+
+    placeAndCheckWin(bestMove.x, bestMove.y, aiColor);
+  };
 
   /**
    * ✅ 수정된 함수 1: placeAndCheckWin
@@ -402,13 +578,6 @@
 
   // --- 초기화 ---
   resetGame();
-
-  isWinBoard=function(b,x,y,c){for(const[dx,dy]of directions){let n=1;for(let i=1;i<5;i++){if(b[y+dy*i]?.[x+dx*i]===c)n++;else break}for(let i=1;i<5;i++){if(b[y-dy*i]?.[x-dx*i]===c)n++;else break}if(n>=5)return!0}return!1};
-  generateMoves=function(b){const m=[],h=b.some(r=>r.some(c=>c!==null));if(!h)return m.push({x:Math.floor(size/2),y:Math.floor(size/2)}),m;const s=new Set;for(let y=0;y<size;y++)for(let x=0;x<size;x++){if(b[y][x]===null)continue;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){if(dx===0&&dy===0)continue;const nx=x+dx,ny=y+dy;if(canPlace(nx,ny)&&b[ny][nx]===null)s.add(`${nx},${ny}`)}}return s.forEach(v=>{const[x,y]=v.split(',').map(Number);m.push({x,y})}),m};
-  evaluateLine=function(l){let s=0;const a=l.filter(c=>c===aiColor).length,p=l.filter(c=>c===playerColor).length,e=l.filter(c=>c===null).length;return a===4&&e===1?s+=1e4:a===3&&e===2?s+=1e3:a===2&&e===3&&(s+=100),p===4&&e===1?s-=2e4:p===3&&e===2?s-=5e3:p===2&&e===3&&(s-=200),s};
-  evaluateBoard=function(b){let t=0;for(let i=0;i<size;i++)for(let j=0;j<size-4;j++)t+=evaluateLine(b[i].slice(j,j+5)),t+=evaluateLine([b[j][i],b[j+1][i],b[j+2][i],b[j+3][i],b[j+4][i]]);for(let i=0;i<size-4;i++)for(let j=0;j<size-4;j++)t+=evaluateLine([b[i][j],b[i+1][j+1],b[i+2][j+2],b[i+3][j+3],b[i+4][j+4]]),t+=evaluateLine([b[i+4][j],b[i+3][j+1],b[i+2][j+2],b[i+1][j+3],b[i][j+4]]);return t};
-  minimax=function(b,d,alpha,beta,m,s){if(d===0||Date.now()-s>9500)return evaluateBoard(b);const v=generateMoves(b);if(v.length===0)return 0;if(m){let e=-1/0;for(const o of v){const n=b.map(r=>r.slice());if(n[o.y][o.x]=aiColor,isWinBoard(n,o.x,o.y,aiColor))return 1e6;const c=minimax(n,d-1,alpha,beta,!1,s);e=Math.max(e,c),alpha=Math.max(alpha,c);if(beta<=alpha)break}return e}else{let e=1/0;for(const o of v){const n=b.map(r=>r.slice());if(n[o.y][o.x]=playerColor,isWinBoard(n,o.x,o.y,playerColor))return-1e6;const c=minimax(n,d-1,alpha,beta,!0,s);e=Math.min(e,c),beta=Math.min(beta,c);if(beta<=alpha)break}return e}};
-  aiMove=function(){if(gameOver)return;const s=Date.now(),m=generateMoves(board);if(m.length===0)return showMessage("무승부!"),void(gameOver=!0);let b=m[0];for(const o of m){const t=board.map(r=>r.slice());if(t[o.y][o.x]=aiColor,isWinBoard(t,o.x,o.y,aiColor))return b=o,void placeAndCheckWin(b.x,b.y,aiColor)}for(const o of m){const t=board.map(r=>r.slice());if(t[o.y][o.x]=playerColor,isWinBoard(t,o.x,o.y,playerColor))return b=o,void placeAndCheckWin(b.x,b.y,aiColor)}let e=-1/0;for(const o of m){const t=board.map(r=>r.slice());t[o.y][o.x]=aiColor;const c=minimax(t,2,-1/0,1/0,!1,s);c>e&&(e=c,b=o)}placeAndCheckWin(b.x,b.y,aiColor)};
 
 })();
 </script>
