@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>오목 AI</title>
 <style>
   body {
@@ -119,6 +119,12 @@
     <option value="black">흑돌 (선공)</option>
     <option value="white">백돌 (후공)</option>
   </select>
+  <label for="boardSize">바둑판 크기:</label>
+  <select id="boardSize">
+    <option value="19">19x19</option>
+    <option value="15">15x15</option>
+    <option value="13">13x13</option>
+  </select>
   <button id="undoBtn">무르기</button>
   <button id="resetBtn">재시작</button>
 </div>
@@ -137,8 +143,8 @@
   const ctx = canvas.getContext('2d');
   
   // --- 상수 및 상태 변수 정의 ---
-  const size = 19;
-  const cellSize = canvas.width / size;
+  let size; // 기존 코드를 아래와 같이 변경
+  let cellSize; // cellSize도 동적으로 계산되므로 resetGame에서 정의
   const directions = [[1,0], [0,1], [1,1], [1,-1]];
 
   let board = Array.from({ length: size }, () => Array(size).fill(null));
@@ -151,6 +157,7 @@
 
   // --- UI 요소 참조 ---
   const playerColorSelect = document.getElementById('playerColor');
+  const boardSizeSelect = document.getElementById('boardSize'); // 새로 추가
   const undoBtn = document.getElementById('undoBtn');
   const resetBtn = document.getElementById('resetBtn');
   const messageBox = document.getElementById('message-box');
@@ -195,11 +202,25 @@
       ctx.beginPath(); ctx.moveTo(pos, cellSize / 2); ctx.lineTo(pos, canvas.height - cellSize / 2); ctx.stroke();
     }
 
-    const starPoints = [3, 9, 15];
+    // 별(화점) 위치를 바둑판 크기에 따라 동적으로 변경
+    let starPoints = [];
+    if (size === 19) {
+        starPoints = [3, 9, 15];
+    } else if (size === 15) {
+        starPoints = [3, 7, 11];
+    } else if (size === 13) {
+        starPoints = [3, 6, 9];
+    }
+    
     ctx.fillStyle = '#553c23';
     starPoints.forEach(x => {
       starPoints.forEach(y => {
-        ctx.beginPath(); ctx.arc(cellSize/2 + x*cellSize, cellSize/2 + y*cellSize, 5, 0, Math.PI * 2); ctx.fill();
+        // 바둑판 크기에 화점이 없는 경우 중앙에만 표시
+        if (starPoints.length > 1 || (x === 6 && y === 6 && size === 13) || (x === 7 && y === 7 && size === 15)) { // 중앙점 조건 추가
+            ctx.beginPath(); 
+            ctx.arc(cellSize/2 + x*cellSize, cellSize/2 + y*cellSize, 5, 0, Math.PI * 2); 
+            ctx.fill();
+        }
       });
     });
 
@@ -271,6 +292,10 @@
   }
   
   function resetGame() {
+    // 선택된 크기를 읽어와 size와 cellSize를 설정
+    size = parseInt(boardSizeSelect.value, 10);
+    cellSize = canvas.width / size;
+
     board = Array.from({ length: size }, () => Array(size).fill(null));
     history = [];
     gameOver = false;
@@ -364,6 +389,7 @@
   undoBtn.addEventListener('click', undo);
   resetBtn.addEventListener('click', resetGame);
   playerColorSelect.addEventListener('change', resetGame);
+  boardSizeSelect.addEventListener('change', resetGame); // 새로 추가
   messageCloseBtn.addEventListener('click', () => { messageBox.style.display = 'none'; });
   window.addEventListener('resize', drawBoard);
 
