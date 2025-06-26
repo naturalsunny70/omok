@@ -124,6 +124,7 @@
     <option value="19">19x19</option>
     <option value="15">15x15</option>
     <option value="13">13x13</option>
+    <option value="10">10x10</option>
   </select>
   <button id="undoBtn">무르기</button>
   <button id="resetBtn">재시작</button>
@@ -143,8 +144,8 @@
   const ctx = canvas.getContext('2d');
   
   // --- 상수 및 상태 변수 정의 ---
-  let size; // 기존 코드를 아래와 같이 변경
-  let cellSize; // cellSize도 동적으로 계산되므로 resetGame에서 정의
+  let size; 
+  let cellSize; 
   const directions = [[1,0], [0,1], [1,1], [1,-1]];
 
   let board = Array.from({ length: size }, () => Array(size).fill(null));
@@ -153,11 +154,11 @@
   let gameOver = false;
   let playerColor = 'black';
   let aiColor = 'white';
-  let audioCtx; // 효과음을 위한 AudioContext
+  let audioCtx; 
 
   // --- UI 요소 참조 ---
   const playerColorSelect = document.getElementById('playerColor');
-  const boardSizeSelect = document.getElementById('boardSize'); // 새로 추가
+  const boardSizeSelect = document.getElementById('boardSize'); 
   const undoBtn = document.getElementById('undoBtn');
   const resetBtn = document.getElementById('resetBtn');
   const messageBox = document.getElementById('message-box');
@@ -181,7 +182,7 @@
     gainNode.connect(audioCtx.destination);
 
     oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // '똑' 소리 주파수
+    oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); 
     gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
 
@@ -210,13 +211,22 @@
         starPoints = [3, 7, 11];
     } else if (size === 13) {
         starPoints = [3, 6, 9];
+    } else if (size === 10) {
+        starPoints = [2, 7]; // For 10x10, placing points at (2,2), (2,7), (7,2), (7,7)
     }
     
     ctx.fillStyle = '#553c23';
     starPoints.forEach(x => {
       starPoints.forEach(y => {
-        // 바둑판 크기에 화점이 없는 경우 중앙에만 표시
-        if (starPoints.length > 1 || (x === 6 && y === 6 && size === 13) || (x === 7 && y === 7 && size === 15)) { // 중앙점 조건 추가
+        // Only draw star points if they are within the board boundaries and are intended for the current size
+        // For 10x10, drawing only the corners of the inner 4x4 square for reference
+        if (size === 10) {
+            if ((x === 2 && y === 2) || (x === 2 && y === 7) || (x === 7 && y === 2) || (x === 7 && y === 7)) {
+                ctx.beginPath(); 
+                ctx.arc(cellSize/2 + x*cellSize, cellSize/2 + y*cellSize, 5, 0, Math.PI * 2); 
+                ctx.fill();
+            }
+        } else { // For 13, 15, 19, draw all generated star points
             ctx.beginPath(); 
             ctx.arc(cellSize/2 + x*cellSize, cellSize/2 + y*cellSize, 5, 0, Math.PI * 2); 
             ctx.fill();
@@ -231,7 +241,7 @@
         }
       }
     }
-    updateTurnIndicator(); // 보드를 그릴 때마다 턴 표시 업데이트
+    updateTurnIndicator(); 
   }
 
   function drawStone(x, y, color) {
@@ -260,7 +270,7 @@
     if (!canPlace(x, y) || gameOver) return false;
     board[y][x] = color;
     history.push({x, y, color});
-    playStoneSound(); // 돌 놓는 소리 재생
+    playStoneSound(); 
     drawBoard();
     return true;
   }
@@ -292,7 +302,6 @@
   }
   
   function resetGame() {
-    // 선택된 크기를 읽어와 size와 cellSize를 설정
     size = parseInt(boardSizeSelect.value, 10);
     cellSize = canvas.width / size;
 
@@ -339,11 +348,9 @@
     if (checkWin(x, y)) {
         showMessage( (color === playerColor ? "플레이어" : "AI") + " 승리!");
         gameOver = true;
-        updateTurnIndicator(); // 게임 종료 상태 업데이트
+        updateTurnIndicator(); 
     } else {
-        // 플레이어 턴을 변경합니다.
         currentPlayer = (color === playerColor) ? aiColor : playerColor;
-        // 턴을 변경한 직후, 표시를 바로 업데이트합니다.
         updateTurnIndicator();
     }
   }
@@ -356,7 +363,7 @@
   function handleClick(e) {
     if (gameOver || currentPlayer !== playerColor) return;
     e.preventDefault();
-    initAudio(); // 첫 터치/클릭 시 오디오 컨텍스트 초기화
+    initAudio(); 
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width; const scaleY = canvas.height / rect.height;
@@ -373,7 +380,6 @@
     placeAndCheckWin(cx, cy, playerColor);
 
     if (!gameOver) {
-      // 이 위치의 updateTurnIndicator() 호출은 제거되었습니다.
       setTimeout(aiMove, 100);
     }
   }
@@ -389,14 +395,13 @@
   undoBtn.addEventListener('click', undo);
   resetBtn.addEventListener('click', resetGame);
   playerColorSelect.addEventListener('change', resetGame);
-  boardSizeSelect.addEventListener('change', resetGame); // 새로 추가
+  boardSizeSelect.addEventListener('change', resetGame); 
   messageCloseBtn.addEventListener('click', () => { messageBox.style.display = 'none'; });
   window.addEventListener('resize', drawBoard);
 
   // --- 초기화 ---
   resetGame();
 
-  // AI 로직 함수들은 공간을 위해 축약합니다 (실제로는 이전 코드와 동일).
   isWinBoard=function(b,x,y,c){for(const[dx,dy]of directions){let n=1;for(let i=1;i<5;i++){if(b[y+dy*i]?.[x+dx*i]===c)n++;else break}for(let i=1;i<5;i++){if(b[y-dy*i]?.[x-dx*i]===c)n++;else break}if(n>=5)return!0}return!1};
   generateMoves=function(b){const m=[],h=b.some(r=>r.some(c=>c!==null));if(!h)return m.push({x:Math.floor(size/2),y:Math.floor(size/2)}),m;const s=new Set;for(let y=0;y<size;y++)for(let x=0;x<size;x++){if(b[y][x]===null)continue;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){if(dx===0&&dy===0)continue;const nx=x+dx,ny=y+dy;if(canPlace(nx,ny)&&b[ny][nx]===null)s.add(`${nx},${ny}`)}}return s.forEach(v=>{const[x,y]=v.split(',').map(Number);m.push({x,y})}),m};
   evaluateLine=function(l){let s=0;const a=l.filter(c=>c===aiColor).length,p=l.filter(c=>c===playerColor).length,e=l.filter(c=>c===null).length;return a===4&&e===1?s+=1e4:a===3&&e===2?s+=1e3:a===2&&e===3&&(s+=100),p===4&&e===1?s-=2e4:p===3&&e===2?s-=5e3:p===2&&e===3&&(s-=200),s};
