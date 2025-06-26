@@ -30,7 +30,7 @@
     touch-action: none; /* 터치 이벤트가 페이지 스크롤 등을 유발하지 않도록 설정 */
   }
   #controls {
-    margin-bottom: 10px;
+    margin-bottom: 15px;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
@@ -52,6 +52,29 @@
   }
   button:active {
     box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
+  }
+
+  /* 턴 알림 스타일 */
+  #turn-indicator {
+    margin-bottom: 15px;
+    padding: 8px 15px;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: 500;
+    display: inline-block;
+    transition: background-color 0.3s, color 0.3s;
+  }
+  .player-turn {
+    background-color: #28a745;
+    color: white;
+  }
+  .ai-turn {
+    background-color: #dc3545;
+    color: white;
+  }
+  .game-over {
+      background-color: #6c757d;
+      color: white;
   }
 
   /* 커스텀 메시지 박스 스타일 */
@@ -89,6 +112,7 @@
 <body>
 
 <h1>오목 AI</h1>
+<div id="turn-indicator"></div>
 <div id="controls">
   <label for="playerColor">내 돌 색상:</label>
   <select id="playerColor">
@@ -100,7 +124,6 @@
 </div>
 <canvas id="board" width="760" height="760"></canvas>
 
-<!-- 커스텀 메시지 박스 HTML -->
 <div id="message-box">
   <div class="message-content">
     <p id="message-text"></p>
@@ -114,9 +137,9 @@
   const ctx = canvas.getContext('2d');
   
   // --- 상수 및 상태 변수 정의 ---
-  const size = 19; // 바둑판 크기 (19x19)
-  const cellSize = canvas.width / size; // 각 칸의 크기
-  const directions = [[1,0], [0,1], [1,1], [1,-1]]; // 4방향 (가로, 세로, 대각선)
+  const size = 19;
+  const cellSize = canvas.width / size;
+  const directions = [[1,0], [0,1], [1,1], [1,-1]];
 
   let board = Array.from({ length: size }, () => Array(size).fill(null));
   let history = [];
@@ -124,6 +147,7 @@
   let gameOver = false;
   let playerColor = 'black';
   let aiColor = 'white';
+  let audioCtx; // 효과음을 위한 AudioContext
 
   // --- UI 요소 참조 ---
   const playerColorSelect = document.getElementById('playerColor');
@@ -132,6 +156,31 @@
   const messageBox = document.getElementById('message-box');
   const messageText = document.getElementById('message-text');
   const messageCloseBtn = document.getElementById('message-close-btn');
+  const turnIndicator = document.getElementById('turn-indicator');
+
+  // --- 오디오 처리 ---
+  function initAudio() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+  }
+
+  function playStoneSound() {
+    if (!audioCtx) return;
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // '똑' 소리 주파수
+    gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+
+    oscillator.start(audioCtx.currentTime);
+    oscillator.stop(audioCtx.currentTime + 0.5);
+  }
 
   // --- 화면 및 보드 그리기 ---
   
@@ -140,33 +189,20 @@
     ctx.strokeStyle = '#553c23';
     ctx.lineWidth = 1;
 
-    // 바둑판 선 그리기
     for (let i = 0; i < size; i++) {
       const pos = cellSize / 2 + i * cellSize;
-      // 가로선
-      ctx.beginPath();
-      ctx.moveTo(cellSize / 2, pos);
-      ctx.lineTo(canvas.width - cellSize / 2, pos);
-      ctx.stroke();
-      // 세로선
-      ctx.beginPath();
-      ctx.moveTo(pos, cellSize / 2);
-      ctx.lineTo(pos, canvas.height - cellSize / 2);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cellSize / 2, pos); ctx.lineTo(canvas.width - cellSize / 2, pos); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pos, cellSize / 2); ctx.lineTo(pos, canvas.height - cellSize / 2); ctx.stroke();
     }
 
-    // 화점(별점) 그리기
     const starPoints = [3, 9, 15];
     ctx.fillStyle = '#553c23';
     starPoints.forEach(x => {
       starPoints.forEach(y => {
-        ctx.beginPath();
-        ctx.arc(cellSize/2 + x*cellSize, cellSize/2 + y*cellSize, 5, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(cellSize/2 + x*cellSize, cellSize/2 + y*cellSize, 5, 0, Math.PI * 2); ctx.fill();
       });
     });
 
-    // 놓인 돌들 그리기
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         if (board[y][x]) {
@@ -174,6 +210,7 @@
         }
       }
     }
+    updateTurnIndicator(); // 보드를 그릴 때마다 턴 표시 업데이트
   }
 
   function drawStone(x, y, color) {
@@ -181,18 +218,12 @@
     const cx = (x + 0.5) * cellSize;
     const cy = (y + 0.5) * cellSize;
     
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     
     const gradient = ctx.createRadialGradient(cx - radius * 0.3, cy - radius * 0.3, radius * 0.1, cx, cy, radius);
 
-    if (color === 'black') {
-      gradient.addColorStop(0, '#666');
-      gradient.addColorStop(1, '#000');
-    } else {
-      gradient.addColorStop(0, '#fff');
-      gradient.addColorStop(1, '#ddd');
-    }
+    if (color === 'black') { gradient.addColorStop(0, '#666'); gradient.addColorStop(1, '#000'); }
+    else { gradient.addColorStop(0, '#fff'); gradient.addColorStop(1, '#ddd'); }
     
     ctx.fillStyle = gradient;
     ctx.fill();
@@ -201,14 +232,14 @@
   // --- 게임 로직 ---
 
   function canPlace(x, y) {
-    if (x < 0 || y < 0 || x >= size || y >= size) return false;
-    return !board[y][x];
+    return x >= 0 && y >= 0 && x < size && y < size && !board[y][x];
   }
 
   function placeStone(x, y, color) {
     if (!canPlace(x, y) || gameOver) return false;
     board[y][x] = color;
     history.push({x, y, color});
+    playStoneSound(); // 돌 놓는 소리 재생
     drawBoard();
     return true;
   }
@@ -216,23 +247,10 @@
   function checkWin(x, y) {
     const color = board[y][x];
     if (!color) return false;
-
     for (const [dx, dy] of directions) {
       let count = 1;
-      // 한쪽 방향으로 검사
-      for (let i = 1; i < 5; i++) {
-        const nx = x + dx * i;
-        const ny = y + dy * i;
-        if (board[ny]?.[nx] === color) count++;
-        else break;
-      }
-      // 반대쪽 방향으로 검사
-      for (let i = 1; i < 5; i++) {
-        const nx = x - dx * i;
-        const ny = y - dy * i;
-        if (board[ny]?.[nx] === color) count++;
-        else break;
-      }
+      for (let i = 1; i < 5; i++) { if (board[y + dy*i]?.[x + dx*i] === color) count++; else break; }
+      for (let i = 1; i < 5; i++) { if (board[y - dy*i]?.[x - dx*i] === color) count++; else break; }
       if (count >= 5) return true;
     }
     return false;
@@ -240,18 +258,13 @@
 
   function undo() {
     if (gameOver) return;
-    // 플레이어가 흑돌(선공)이면 2개, 백돌(후공)이면 2개를 무릅니다.
-    // 단, 게임 시작 직후 AI가 두기 전이면 1개만 무릅니다.
     const movesToUndo = (history.length > 1 && playerColor !== currentPlayer) ? 2 : 1;
     if (history.length < movesToUndo) return;
 
     for (let i = 0; i < movesToUndo; i++) {
         const lastMove = history.pop();
-        if (lastMove) {
-            board[lastMove.y][lastMove.x] = null;
-        }
+        if (lastMove) board[lastMove.y][lastMove.x] = null;
     }
-
     currentPlayer = playerColor;
     gameOver = false;
     drawBoard();
@@ -271,216 +284,71 @@
     }
   }
 
-  // --- AI 로직 ---
-  
-  function isWinBoard(boardState, x, y, color) {
-    for (const [dx, dy] of directions) {
-      let count = 1;
-      for(let i=1; i<5; i++) { if(boardState[y + dy*i]?.[x + dx*i] === color) count++; else break; }
-      for(let i=1; i<5; i++) { if(boardState[y - dy*i]?.[x - dx*i] === color) count++; else break; }
-      if (count >= 5) return true;
-    }
-    return false;
-  }
-  
-  function generateMoves(boardState) {
-    const moves = [];
-    const hasStone = boardState.some(row => row.some(cell => cell !== null));
-    
-    if (!hasStone) {
-        // 판이 비어있으면 중앙에 둡니다.
-        moves.push({ x: Math.floor(size/2), y: Math.floor(size/2) });
-        return moves;
-    }
-
-    const moveSet = new Set();
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        if (boardState[y][x] === null) continue;
-        for (let dy = -2; dy <= 2; dy++) {
-          for (let dx = -2; dx <= 2; dx++) {
-            if (dx === 0 && dy === 0) continue;
-            const nx = x + dx;
-            const ny = y + dy;
-            if (canPlace(nx, ny) && boardState[ny][nx] === null) {
-              moveSet.add(`${nx},${ny}`);
-            }
-          }
-        }
+  function updateTurnIndicator() {
+      if (gameOver) {
+          turnIndicator.textContent = "게임 종료";
+          turnIndicator.className = 'game-over';
+      } else if (currentPlayer === playerColor) {
+          turnIndicator.textContent = "당신의 턴";
+          turnIndicator.className = 'player-turn';
+      } else {
+          turnIndicator.textContent = "AI가 생각 중...";
+          turnIndicator.className = 'ai-turn';
       }
-    }
-    moveSet.forEach(move => {
-        const [x, y] = move.split(',').map(Number);
-        moves.push({x, y});
-    });
-    return moves;
-  }
-  
-  function evaluateLine(line) {
-    let score = 0;
-    const aiCount = line.filter(c => c === aiColor).length;
-    const playerCount = line.filter(c => c === playerColor).length;
-    const emptyCount = line.filter(c => c === null).length;
-
-    if (aiCount === 4 && emptyCount === 1) score += 10000;
-    else if (aiCount === 3 && emptyCount === 2) score += 1000;
-    else if (aiCount === 2 && emptyCount === 3) score += 100;
-    
-    if (playerCount === 4 && emptyCount === 1) score -= 20000;
-    else if (playerCount === 3 && emptyCount === 2) score -= 5000;
-    else if (playerCount === 2 && emptyCount === 3) score -= 200;
-    
-    return score;
   }
 
-  function evaluateBoard(boardState) {
-      let totalScore = 0;
-      for (let i = 0; i < size; i++) {
-          for (let j = 0; j < size - 4; j++) {
-              // 가로
-              totalScore += evaluateLine(boardState[i].slice(j, j + 5));
-              // 세로
-              totalScore += evaluateLine([boardState[j][i], boardState[j+1][i], boardState[j+2][i], boardState[j+3][i], boardState[j+4][i]]);
-          }
-      }
-      // 대각선
-      for (let i = 0; i < size - 4; i++) {
-          for (let j = 0; j < size - 4; j++) {
-              totalScore += evaluateLine([boardState[i][j], boardState[i+1][j+1], boardState[i+2][j+2], boardState[i+3][j+3], boardState[i+4][j+4]]);
-              totalScore += evaluateLine([boardState[i+4][j], boardState[i+3][j+1], boardState[i+2][j+2], boardState[i+1][j+3], boardState[i][j+4]]);
-          }
-      }
-      return totalScore;
-  }
-  
-  function minimax(boardState, depth, alpha, beta, maximizing, startTime) {
-    if (depth === 0 || Date.now() - startTime > 9500) { // 시간제한 9.5초
-      return evaluateBoard(boardState);
-    }
+  // --- AI 로직 (이전과 동일) ---
+  function isWinBoard(boardState, x, y, color) { /* ... */ }
+  function generateMoves(boardState) { /* ... */ }
+  function evaluateLine(line) { /* ... */ }
+  function evaluateBoard(boardState) { /* ... */ }
+  function minimax(boardState, depth, alpha, beta, maximizing, startTime) { /* ... */ }
+  function aiMove() { /* ... */ }
 
-    const moves = generateMoves(boardState);
-    if (moves.length === 0) return 0;
-    
-    if (maximizing) {
-      let maxEval = -Infinity;
-      for (const move of moves) {
-        const newBoard = boardState.map(r => r.slice());
-        newBoard[move.y][move.x] = aiColor;
-        if(isWinBoard(newBoard, move.x, move.y, aiColor)) return 1000000;
-        const evalScore = minimax(newBoard, depth - 1, alpha, beta, false, startTime);
-        maxEval = Math.max(maxEval, evalScore);
-        alpha = Math.max(alpha, evalScore);
-        if (beta <= alpha) break;
-      }
-      return maxEval;
-    } else {
-      let minEval = Infinity;
-      for (const move of moves) {
-        const newBoard = boardState.map(r => r.slice());
-        newBoard[move.y][move.x] = playerColor;
-        if(isWinBoard(newBoard, move.x, move.y, playerColor)) return -1000000;
-        const evalScore = minimax(newBoard, depth - 1, alpha, beta, true, startTime);
-        minEval = Math.min(minEval, evalScore);
-        beta = Math.min(beta, evalScore);
-        if (beta <= alpha) break;
-      }
-      return minEval;
-    }
-  }
-  
-  function aiMove() {
-    if (gameOver) return;
-    const startTime = Date.now();
-    const moves = generateMoves(board);
-    
-    if (moves.length === 0) {
-        showMessage("무승부!");
-        gameOver = true;
-        return;
-    }
-
-    let bestMove = moves[0];
-    
-    // 1. AI가 이길 수 있는 수가 있는지 확인
-    for (const move of moves) {
-      const tempBoard = board.map(r => r.slice());
-      tempBoard[move.y][move.x] = aiColor;
-      if (isWinBoard(tempBoard, move.x, move.y, aiColor)) {
-        bestMove = move;
-        placeAndCheckWin(bestMove.x, bestMove.y, aiColor);
-        return;
-      }
-    }
-    
-    // 2. 플레이어가 이길 수 있는 수가 있는지 확인하고 막기
-    for (const move of moves) {
-      const tempBoard = board.map(r => r.slice());
-      tempBoard[move.y][move.x] = playerColor;
-      if (isWinBoard(tempBoard, move.x, move.y, playerColor)) {
-        bestMove = move;
-        placeAndCheckWin(bestMove.x, bestMove.y, aiColor);
-        return;
-      }
-    }
-
-    // 3. 미니맥스 탐색
-    let bestScore = -Infinity;
-    for (const move of moves) {
-      const newBoard = board.map(r => r.slice());
-      newBoard[move.y][move.x] = aiColor;
-      const score = minimax(newBoard, 2, -Infinity, Infinity, false, startTime); // Depth 2로 제한
-      if (score > bestScore) {
-        bestScore = score;
-        bestMove = move;
-      }
-    }
-
-    placeAndCheckWin(bestMove.x, bestMove.y, aiColor);
-  }
-
+  /**
+   * ✅ 수정된 함수 1: placeAndCheckWin
+   * 플레이어 변경 후 턴 표시를 즉시 업데이트하도록 수정
+   */
   function placeAndCheckWin(x, y, color) {
     placeStone(x, y, color);
     if (checkWin(x, y)) {
         showMessage( (color === playerColor ? "플레이어" : "AI") + " 승리!");
         gameOver = true;
+        updateTurnIndicator(); // 게임 종료 상태 업데이트
     } else {
+        // 플레이어 턴을 변경합니다.
         currentPlayer = (color === playerColor) ? aiColor : playerColor;
+        // 턴을 변경한 직후, 표시를 바로 업데이트합니다.
+        updateTurnIndicator();
     }
   }
 
-
   // --- 이벤트 핸들러 ---
-  
+  /**
+   * ✅ 수정된 함수 2: handleClick
+   * placeAndCheckWin에서 턴 표시를 업데이트하므로 중복되는 코드 제거
+   */
   function handleClick(e) {
     if (gameOver || currentPlayer !== playerColor) return;
     e.preventDefault();
+    initAudio(); // 첫 터치/클릭 시 오디오 컨텍스트 초기화
 
     const rect = canvas.getBoundingClientRect();
-    
-    // CSS 스케일을 고려하여 정확한 캔버스 좌표 계산
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const scaleX = canvas.width / rect.width; const scaleY = canvas.height / rect.height;
     
     let clientX, clientY;
-    if (e.touches) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    } else {
-      clientX = e.clientX;
-      clientY = e.clientY;
-    }
+    if (e.touches) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
+    else { clientX = e.clientX; clientY = e.clientY; }
     
-    const x = (clientX - rect.left) * scaleX;
-    const y = (clientY - rect.top) * scaleY;
-
-    const cx = Math.floor(x / cellSize);
-    const cy = Math.floor(y / cellSize);
+    const x = (clientX - rect.left) * scaleX; const y = (clientY - rect.top) * scaleY;
+    const cx = Math.floor(x / cellSize); const cy = Math.floor(y / cellSize);
 
     if (!canPlace(cx, cy)) return;
     
     placeAndCheckWin(cx, cy, playerColor);
 
     if (!gameOver) {
+      // 이 위치의 updateTurnIndicator() 호출은 제거되었습니다.
       setTimeout(aiMove, 100);
     }
   }
@@ -493,25 +361,26 @@
   // --- 이벤트 리스너 등록 ---
   canvas.addEventListener('mousedown', handleClick);
   canvas.addEventListener('touchstart', handleClick);
-
   undoBtn.addEventListener('click', undo);
   resetBtn.addEventListener('click', resetGame);
   playerColorSelect.addEventListener('change', resetGame);
-  
-  messageCloseBtn.addEventListener('click', () => {
-    messageBox.style.display = 'none';
-  });
-
-  window.addEventListener('resize', () => {
-    // 화면 크기가 변경될 때마다 보드를 다시 그림 (스케일은 CSS로 자동조정됨)
-    drawBoard();
-  });
+  messageCloseBtn.addEventListener('click', () => { messageBox.style.display = 'none'; });
+  window.addEventListener('resize', drawBoard);
 
   // --- 초기화 ---
   resetGame();
+
+  // AI 로직 함수들은 공간을 위해 축약합니다 (실제로는 이전 코드와 동일).
+  isWinBoard=function(b,x,y,c){for(const[dx,dy]of directions){let n=1;for(let i=1;i<5;i++){if(b[y+dy*i]?.[x+dx*i]===c)n++;else break}for(let i=1;i<5;i++){if(b[y-dy*i]?.[x-dx*i]===c)n++;else break}if(n>=5)return!0}return!1};
+  generateMoves=function(b){const m=[],h=b.some(r=>r.some(c=>c!==null));if(!h)return m.push({x:Math.floor(size/2),y:Math.floor(size/2)}),m;const s=new Set;for(let y=0;y<size;y++)for(let x=0;x<size;x++){if(b[y][x]===null)continue;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){if(dx===0&&dy===0)continue;const nx=x+dx,ny=y+dy;if(canPlace(nx,ny)&&b[ny][nx]===null)s.add(`${nx},${ny}`)}}return s.forEach(v=>{const[x,y]=v.split(',').map(Number);m.push({x,y})}),m};
+  evaluateLine=function(l){let s=0;const a=l.filter(c=>c===aiColor).length,p=l.filter(c=>c===playerColor).length,e=l.filter(c=>c===null).length;return a===4&&e===1?s+=1e4:a===3&&e===2?s+=1e3:a===2&&e===3&&(s+=100),p===4&&e===1?s-=2e4:p===3&&e===2?s-=5e3:p===2&&e===3&&(s-=200),s};
+  evaluateBoard=function(b){let t=0;for(let i=0;i<size;i++)for(let j=0;j<size-4;j++)t+=evaluateLine(b[i].slice(j,j+5)),t+=evaluateLine([b[j][i],b[j+1][i],b[j+2][i],b[j+3][i],b[j+4][i]]);for(let i=0;i<size-4;i++)for(let j=0;j<size-4;j++)t+=evaluateLine([b[i][j],b[i+1][j+1],b[i+2][j+2],b[i+3][j+3],b[i+4][j+4]]),t+=evaluateLine([b[i+4][j],b[i+3][j+1],b[i+2][j+2],b[i+1][j+3],b[i][j+4]]);return t};
+  minimax=function(b,d,alpha,beta,m,s){if(d===0||Date.now()-s>9500)return evaluateBoard(b);const v=generateMoves(b);if(v.length===0)return 0;if(m){let e=-1/0;for(const o of v){const n=b.map(r=>r.slice());if(n[o.y][o.x]=aiColor,isWinBoard(n,o.x,o.y,aiColor))return 1e6;const c=minimax(n,d-1,alpha,beta,!1,s);e=Math.max(e,c),alpha=Math.max(alpha,c);if(beta<=alpha)break}return e}else{let e=1/0;for(const o of v){const n=b.map(r=>r.slice());if(n[o.y][o.x]=playerColor,isWinBoard(n,o.x,o.y,playerColor))return-1e6;const c=minimax(n,d-1,alpha,beta,!0,s);e=Math.min(e,c),beta=Math.min(beta,c);if(beta<=alpha)break}return e}};
+  aiMove=function(){if(gameOver)return;const s=Date.now(),m=generateMoves(board);if(m.length===0)return showMessage("무승부!"),void(gameOver=!0);let b=m[0];for(const o of m){const t=board.map(r=>r.slice());if(t[o.y][o.x]=aiColor,isWinBoard(t,o.x,o.y,aiColor))return b=o,void placeAndCheckWin(b.x,b.y,aiColor)}for(const o of m){const t=board.map(r=>r.slice());if(t[o.y][o.x]=playerColor,isWinBoard(t,o.x,o.y,playerColor))return b=o,void placeAndCheckWin(b.x,b.y,aiColor)}let e=-1/0;for(const o of m){const t=board.map(r=>r.slice());t[o.y][o.x]=aiColor;const c=minimax(t,2,-1/0,1/0,!1,s);c>e&&(e=c,b=o)}placeAndCheckWin(b.x,b.y,aiColor)};
 
 })();
 </script>
 
 </body>
 </html>
+```
