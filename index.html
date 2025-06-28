@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>오목</title>
+<title>오목 AI</title>
 <style>
   body {
     text-align: center;
@@ -12,7 +12,7 @@
     color: #3a2a1a;
     margin: 0;
     padding: 10px;
-    overscroll-behavior: none; /* iOS/Android에서 스크롤 바운스 효과 제거 */
+    overscroll-behavior: none;
   }
   h1 {
     margin-top: 10px;
@@ -27,22 +27,22 @@
     display: block;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     border-radius: 8px;
-    touch-action: none; /* 터치 이벤트가 페이지 스크롤 등을 유발하지 않도록 설정 */
+    touch-action: none;
   }
   #controls {
     margin-bottom: 15px;
     display: flex;
-    flex-direction: column; /* Changed to column for stacking */
+    flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 10px; /* Space between rows */
+    gap: 10px;
   }
   #controls .row {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 10px; /* Space between items in a row */
-    margin-bottom: 5px; /* Add some space between control rows */
+    gap: 10px;
+    flex-wrap: wrap; /* 작은 화면에서 줄바꿈 지원 */
   }
   button, select {
     font-size: 16px;
@@ -130,7 +130,7 @@
     <button id="undoBtn">무르기</button>
   </div>
   <div class="row">
-    <label for="boardSize">바둑판 크기 선택:</label>
+    <label for="boardSize">바둑판 크기:</label>
     <select id="boardSize">
       <option value="19">19x19</option>
       <option value="15">15x15</option>
@@ -154,18 +154,18 @@
   const canvas = document.getElementById('board');
   const ctx = canvas.getContext('2d');
   
-  // --- 상수 및 상태 변수 정의 ---
+  // --- 상태 변수 정의 ---
   let size; 
   let cellSize; 
-  const directions = [[1,0], [0,1], [1,1], [1,-1]];
+  const directions = [[1,0], [0,1], [1,1], [1,-1]]; // 4방향 (가로, 세로, 대각선)
 
-  let board = Array.from({ length: size }, () => Array(size).fill(null));
-  let history = [];
-  let currentPlayer = 'black';
-  let gameOver = false;
-  let playerColor = 'black';
-  let aiColor = 'white';
-  let audioCtx; 
+  let board; // 바둑판 상태
+  let history; // 착수 기록
+  let currentPlayer; // 현재 턴 플레이어
+  let gameOver; // 게임 종료 여부
+  let playerColor; // 플레이어 돌 색상
+  let aiColor; // AI 돌 색상
+  let audioCtx; // 오디오 컨텍스트
 
   // --- UI 요소 참조 ---
   const playerColorSelect = document.getElementById('playerColor');
@@ -179,6 +179,7 @@
 
   // --- 오디오 처리 ---
   function initAudio() {
+    // 사용자 제스처(클릭) 후에 오디오 컨텍스트를 초기화하여 자동 재생 정책 회피
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
@@ -193,9 +194,9 @@
     gainNode.connect(audioCtx.destination);
 
     oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); 
-    gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+    oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // 주파수 설정
+    gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime); // 볼륨 설정
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5); // 소리 페이드 아웃
 
     oscillator.start(audioCtx.currentTime);
     oscillator.stop(audioCtx.currentTime + 0.5);
@@ -204,14 +205,15 @@
   // --- 화면 및 보드 그리기 ---
   
   function drawBoard() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#553c23';
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // 캔버스 초기화
+    ctx.strokeStyle = '#553c23'; // 선 색상
     ctx.lineWidth = 1;
 
+    // 바둑판 줄 그리기
     for (let i = 0; i < size; i++) {
       const pos = cellSize / 2 + i * cellSize;
-      ctx.beginPath(); ctx.moveTo(cellSize / 2, pos); ctx.lineTo(canvas.width - cellSize / 2, pos); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(pos, cellSize / 2); ctx.lineTo(pos, canvas.height - cellSize / 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cellSize / 2, pos); ctx.lineTo(canvas.width - cellSize / 2, pos); ctx.stroke(); // 가로 줄
+      ctx.beginPath(); ctx.moveTo(pos, cellSize / 2); ctx.lineTo(pos, canvas.height - cellSize / 2); ctx.stroke(); // 세로 줄
     }
 
     // 별(화점) 위치를 바둑판 크기에 따라 동적으로 변경
@@ -223,21 +225,20 @@
     } else if (size === 13) {
         starPoints = [3, 6, 9];
     } else if (size === 10) {
-        starPoints = [2, 7]; 
+        starPoints = [2, 7]; // 10x10 보드는 4개의 화점
     }
     
-    ctx.fillStyle = '#553c23';
+    ctx.fillStyle = '#553c23'; // 화점 색상
     starPoints.forEach(x => {
       starPoints.forEach(y => {
-        // Only draw star points if they are within the board boundaries and are intended for the current size
-        // For 10x10, drawing only the corners of the inner 4x4 square for reference
+        // 10x10 보드의 경우, 특정 위치의 화점만 그립니다. (2,2), (2,7), (7,2), (7,7)
         if (size === 10) {
             if ((x === 2 && y === 2) || (x === 2 && y === 7) || (x === 7 && y === 2) || (x === 7 && y === 7)) {
                 ctx.beginPath(); 
                 ctx.arc(cellSize/2 + x*cellSize, cellSize/2 + y*cellSize, 5, 0, Math.PI * 2); 
                 ctx.fill();
             }
-        } else { // For 13, 15, 19, draw all generated star points
+        } else { // 다른 크기의 보드에서는 모든 생성된 화점 그리기
             ctx.beginPath(); 
             ctx.arc(cellSize/2 + x*cellSize, cellSize/2 + y*cellSize, 5, 0, Math.PI * 2); 
             ctx.fill();
@@ -245,6 +246,7 @@
       });
     });
 
+    // 놓여진 돌 그리기
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         if (board[y][x]) {
@@ -253,7 +255,7 @@
       }
     }
 
-    // AI가 마지막으로 둔 돌에 마커 그리기
+    // AI가 마지막으로 둔 돌에 마커 그리기 (플레이어 턴일 때만)
     if (history.length > 0) {
       const lastMove = history[history.length - 1];
       if (lastMove.color === aiColor && currentPlayer === playerColor) { // AI가 둔 마지막 돌이고 현재 플레이어 턴일 때
@@ -261,20 +263,21 @@
       }
     }
 
-    updateTurnIndicator(); 
+    updateTurnIndicator(); // 턴 표시 업데이트
   }
 
   function drawStone(x, y, color) {
-    const radius = cellSize / 2.5;
-    const cx = (x + 0.5) * cellSize;
-    const cy = (y + 0.5) * cellSize;
+    const radius = cellSize / 2.5; // 돌의 반지름
+    const cx = (x + 0.5) * cellSize; // 돌의 중앙 X 좌표
+    const cy = (y + 0.5) * cellSize; // 돌의 중앙 Y 좌표
     
-    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); // 원 그리기
     
+    // 돌에 그라데이션 효과 주기
     const gradient = ctx.createRadialGradient(cx - radius * 0.3, cy - radius * 0.3, radius * 0.1, cx, cy, radius);
 
-    if (color === 'black') { gradient.addColorStop(0, '#666'); gradient.addColorStop(1, '#000'); }
-    else { gradient.addColorStop(0, '#fff'); gradient.addColorStop(1, '#ddd'); }
+    if (color === 'black') { gradient.addColorStop(0, '#666'); gradient.addColorStop(1, '#000'); } // 흑돌 그라데이션
+    else { gradient.addColorStop(0, '#fff'); gradient.addColorStop(1, '#ddd'); } // 백돌 그라데이션
     
     ctx.fillStyle = gradient;
     ctx.fill();
@@ -284,9 +287,10 @@
   function drawMarker(x, y, stoneColor) {
     const cx = (x + 0.5) * cellSize;
     const cy = (y + 0.5) * cellSize;
-    const markerSize = cellSize / 4; 
+    const markerSize = cellSize / 4; // 마커 크기
 
     ctx.beginPath();
+    // 역삼각형 그리기 (중앙 기준)
     ctx.moveTo(cx - markerSize, cy - markerSize / 2);
     ctx.lineTo(cx + markerSize, cy - markerSize / 2);
     ctx.lineTo(cx, cy + markerSize);
@@ -298,63 +302,82 @@
 
   // --- 게임 로직 ---
 
+  // 해당 위치에 돌을 놓을 수 있는지 확인
   function canPlace(x, y) {
     return x >= 0 && y >= 0 && x < size && y < size && !board[y][x];
   }
 
+  // 돌 놓기
   function placeStone(x, y, color) {
     if (!canPlace(x, y) || gameOver) return false;
     board[y][x] = color;
-    history.push({x, y, color});
-    playStoneSound(); 
-    drawBoard();
+    history.push({x, y, color}); // 기록에 추가
+    playStoneSound(); // 돌 놓는 소리 재생
+    // drawBoard(); // 보드 다시 그리기 (placeAndCheckWin에서 호출되므로 여기서 제거)
     return true;
   }
 
+  // 승리 조건 확인
   function checkWin(x, y) {
     const color = board[y][x];
-    if (!color) return false;
-    for (const [dx, dy] of directions) {
-      let count = 1;
-      for (let i = 1; i < 5; i++) { if (board[y + dy*i]?.[x + dx*i] === color) count++; else break; }
-      for (let i = 1; i < 5; i++) { if (board[y - dy*i]?.[x - dx*i] === color) count++; else break; }
-      if (count >= 5) return true;
+    if (!color) return false; // 돌이 없으면 승리 아님
+    for (const [dx, dy] of directions) { // 4가지 방향 (가로, 세로, 대각선)
+      let count = 1; // 현재 돌 포함
+      // 정방향 탐색
+      for (let i = 1; i < 5; i++) { 
+        if (board[y + dy*i]?.[x + dx*i] === color) count++; 
+        else break; 
+      }
+      // 역방향 탐색
+      for (let i = 1; i < 5; i++) { 
+        if (board[y - dy*i]?.[x - dx*i] === color) count++; 
+        else break; 
+      }
+      if (count >= 5) return true; // 5개 이상 연속이면 승리
     }
     return false;
   }
 
+  // 무르기 (undo)
   function undo() {
     if (gameOver) return;
+    // AI가 둔 후 플레이어 턴일 때 (2수 무르기)
+    // 플레이어가 둔 후 AI 턴일 때 (1수 무르기)
     const movesToUndo = (currentPlayer === playerColor && history.length >= 2) ? 2 : 1; 
     
-    if (history.length < movesToUndo) return;
+    if (history.length < movesToUndo) return; // 무르기할 돌이 없으면 리턴
 
     for (let i = 0; i < movesToUndo; i++) {
         const lastMove = history.pop();
-        if (lastMove) board[lastMove.y][lastMove.x] = null;
+        if (lastMove) board[lastMove.y][lastMove.x] = null; // 보드에서 돌 제거
     }
-    currentPlayer = playerColor; 
-    gameOver = false;
-    drawBoard();
+    currentPlayer = playerColor; // 턴을 플레이어로 되돌림
+    gameOver = false; // 게임 오버 상태 해제
+    drawBoard(); // 보드 다시 그리기
   }
   
+  // 게임 초기화
   function resetGame() {
-    size = parseInt(boardSizeSelect.value, 10);
-    cellSize = canvas.width / size;
+    size = parseInt(boardSizeSelect.value, 10); // 선택된 보드 크기 설정
+    canvas.width = 760; // 캔버스 너비 고정
+    canvas.height = 760; // 캔버스 높이 고정
+    cellSize = canvas.width / size; // 셀 크기 계산
 
-    board = Array.from({ length: size }, () => Array(size).fill(null));
-    history = [];
-    gameOver = false;
-    playerColor = playerColorSelect.value;
-    aiColor = playerColor === 'black' ? 'white' : 'black';
-    currentPlayer = 'black';
-    drawBoard();
+    board = Array.from({ length: size }, () => Array(size).fill(null)); // 보드 초기화
+    history = []; // 기록 초기화
+    gameOver = false; // 게임 오버 상태 초기화
+    playerColor = playerColorSelect.value; // 플레이어 색상 설정
+    aiColor = playerColor === 'black' ? 'white' : 'black'; // AI 색상 설정
+    currentPlayer = 'black'; // 첫 턴은 항상 흑돌
+    drawBoard(); // 보드 그리기
 
+    // 플레이어가 백돌이면 AI가 먼저 둠
     if (playerColor === 'white') {
       setTimeout(aiMove, 300);
     }
   }
 
+  // 턴 표시 업데이트
   function updateTurnIndicator() {
       if (gameOver) {
           turnIndicator.textContent = "게임 종료";
@@ -368,109 +391,176 @@
       }
   }
 
-  // --- AI 로직 ---
-  isWinBoard=function(b,x,y,c){for(const[dx,dy]of directions){let n=1;for(let i=1;i<5;i++){if(b[y+dy*i]?.[x+dx*i]===c)n++;else break}for(let i=1;i<5;i++){if(b[y-dy*i]?.[x-dx*i]===c)n++;else break}if(n>=5)return!0}return!1};
-  generateMoves=function(b){const m=[],h=b.some(r=>r.some(c=>c!==null));if(!h)return m.push({x:Math.floor(size/2),y:Math.floor(size/2)}),m;const s=new Set;for(let y=0;y<size;y++)for(let x=0;x<size;x++){if(b[y][x]===null)continue;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){if(dx===0&&dy===0)continue;const nx=x+dx,ny=y+dy;if(canPlace(nx,ny)&&b[ny][nx]===null)s.add(`${nx},${ny}`)}}return s.forEach(v=>{const[x,y]=v.split(',').map(Number);m.push({x,y})}),m};
-  
-  evaluateLine=function(l){
-    let s=0;
-    const a=l.filter(c=>c===aiColor).length;
-    const p=l.filter(c=>c===playerColor).length;
-    const e=l.filter(c=>c===null).length;
-
-    // AI threats
-    if (a === 4 && e === 1) s += 1e4; // AI Open 4 (can win in 1 move)
-    if (a === 3 && e === 2) s += 1e3; // AI Open 3 (can make 4 with 2 empty spaces)
-
-    // Player threats (prioritize blocking)
-    // "막힌4" (blocked four) and "오픈4" (open four) are considered here as any 4 player stones with 1 empty space in a 5-cell line.
-    if (p === 4 && e === 1) s -= 9e5; // Player Open/Blocked Four (VERY HIGH priority to block)
-    if (p === 3 && e === 2) s -= 5e4; // Player Open 3 (HIGH priority to block)
-
-    return s;
-  };
-  evaluateBoard=function(b){let t=0;for(let i=0;i<size;i++)for(let j=0;j<size-4;j++)t+=evaluateLine(b[i].slice(j,j+5)),t+=evaluateLine([b[j][i],b[j+1][i],b[j+2][i],b[j+3][i],b[j+4][i]]);for(let i=0;i<size-4;i++)for(let j=0;j<size-4;j++)t+=evaluateLine([b[i][j],b[i+1][j+1],b[i+2][j+2],b[i+3][j+3],b[i+4][j+4]]),t+=evaluateLine([b[i+4][j],b[i+3][j+1],b[i+2][j+2],b[i+1][j+3],b[i][j+4]]);return t};
-  
-  // minimax 시간 제한을 동적으로 변경
-  minimax=function(b,d,alpha,beta,m,startTimeForAiMove, maxAllowedTimeForAiMove){
-    if(d===0 || Date.now() - startTimeForAiMove > maxAllowedTimeForAiMove) return evaluateBoard(b);
-    const v=generateMoves(b);
-    if(v.length===0)return 0;
-    if(m){
-      let e=-1/0;
-      for(const o of v){
-        const n=b.map(r=>r.slice());
-        if(n[o.y][o.x]=aiColor,isWinBoard(n,o.x,o.y,aiColor))return 1e6;
-        const c=minimax(n,d-1,alpha,beta,!1,startTimeForAiMove, maxAllowedTimeForAiMove);
-        e=Math.max(e,c),alpha=Math.max(alpha,c);
-        if(beta<=alpha)break
-      }
-      return e
-    }else{
-      let e=1/0;
-      for(const o of v){
-        const n=b.map(r=>r.slice());
-        if(n[o.y][o.x]=playerColor,isWinBoard(n,o.x,o.y,playerColor))return-1e6;
-        const c=minimax(n,d-1,alpha,beta,!0,startTimeForAiMove, maxAllowedTimeForAiMove);
-        e=Math.min(e,c),beta=Math.min(beta,c);
-        if(beta<=alpha)break
-      }
-      return e
+  // 돌을 놓고 승리 여부 확인 후 턴 전환
+  function placeAndCheckWin(x, y, color) {
+    if (!placeStone(x, y, color)) return; // 돌 놓기에 실패하면 리턴 (placeStone이 유효성 검사를 함)
+    if (checkWin(x, y)) {
+        showMessage( (color === playerColor ? "플레이어" : "AI") + " 승리!");
+        gameOver = true;
+    } else {
+        currentPlayer = (color === playerColor) ? aiColor : playerColor; // 턴 전환
     }
-  };
+    drawBoard(); // 보드 다시 그리기 (마커 업데이트 포함)
+  }
 
-  /**
-   * Check if the player has a forced win (open four or double three)
-   * This function needs to iterate through all possible immediate winning moves (open 4)
-   * and detect double 3s which are also forced wins.
-   * A simplified approach for double 3: if placing a stone on multiple spots leads to a win.
-   */
+  // --- AI 로직 ---
+  
+  // 특정 보드 상태에서 지정된 위치에 돌을 놓았을 때 승리하는지 확인 (AI 내부 평가용)
+  // b: 보드, x, y: 놓을 위치, c: 돌 색상
+  function isWinBoard(b, x, y, c) {
+    for (const [dx, dy] of directions) {
+      let n = 1;
+      for (let i = 1; i < 5; i++) { if (b[y + dy*i]?.[x + dx*i] === c) n++; else break; }
+      for (let i = 1; i < 5; i++) { if (b[y - dy*i]?.[x - dx*i] === c) n++; else break; }
+      if (n >= 5) return true;
+    }
+    return false;
+  }
+
+  // 현재 보드에서 가능한 모든 착수 위치를 생성 (근접한 빈 칸)
+  function generateMoves(b) {
+    const moves = [];
+    // 바둑판이 비어있으면 중앙에만 둘 수 있도록
+    const isBoardEmpty = !b.some(row => row.some(cell => cell !== null));
+    if (isBoardEmpty) {
+        moves.push({ x: Math.floor(size / 2), y: Math.floor(size / 2) });
+        return moves;
+    }
+
+    const moveSet = new Set(); // 중복 방지를 위한 Set
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (b[y][x] !== null) { // 돌이 놓여진 칸 주변 탐색
+          for (let dy = -2; dy <= 2; dy++) { // -2 ~ +2 범위
+            for (let dx = -2; dx <= 2; dx++) { // -2 ~ +2 범위
+              if (dx === 0 && dy === 0) continue; // 자기 자신은 건너뛰기
+              const nx = x + dx, ny = y + dy;
+              if (nx >= 0 && nx < size && ny >= 0 && ny < size && b[ny][nx] === null) {
+                moveSet.add(`${nx},${ny}`); // 유효한 빈 칸 추가
+              }
+            }
+          }
+        }
+      }
+    }
+    moveSet.forEach(v => { // Set의 값을 배열로 변환
+      const [x, y] = v.split(',').map(Number);
+      moves.push({x, y});
+    });
+    return moves;
+  }
+  
+  // 한 줄(5칸)의 패턴을 평가하여 점수 반환
+  function evaluateLine(line) {
+    let score = 0;
+    const aiCount = line.filter(c => c === aiColor).length;
+    const playerCount = line.filter(c => c === playerColor).length;
+    const emptyCount = line.filter(c => c === null).length;
+
+    // AI의 공격 패턴 점수
+    if (aiCount === 5) return 1000000; // 5목
+    if (aiCount === 4 && emptyCount === 1) score += 10000; // AI의 열린 4 (다음 수에 이김)
+    if (aiCount === 3 && emptyCount === 2) score += 1000; // AI의 열린 3 (두 수 안에 이길 가능성)
+    if (aiCount === 2 && emptyCount === 3) score += 100;  // AI의 열린 2
+    
+    // 플레이어의 위협 패턴 점수 (AI가 막아야 하므로 높은 음수)
+    if (playerCount === 5) return -1000000; // 플레이어의 5목
+    if (playerCount === 4 && emptyCount === 1) score -= 900000; // 플레이어의 열린/막힌 4 (최우선으로 막아야 함)
+    if (playerCount === 3 && emptyCount === 2) score -= 50000; // 플레이어의 열린 3 (매우 중요하게 막아야 함)
+    if (playerCount === 2 && emptyCount === 3) score -= 5000; // 플레이어의 열린 2
+
+    return score;
+  }
+
+  // 보드 전체를 평가하여 총 점수 반환
+  function evaluateBoard(b) {
+    let totalScore = 0;
+    // 가로, 세로, 대각선 모든 5칸 라인에 대해 평가
+    for (let i = 0; i < size; i++) {
+      for (let j = 0; j < size - 4; j++) {
+        // 가로
+        totalScore += evaluateLine(b[i].slice(j, j + 5));
+        // 세로
+        totalScore += evaluateLine([b[j][i], b[j+1][i], b[j+2][i], b[j+3][i], b[j+4][i]]);
+      }
+    }
+    for (let i = 0; i < size - 4; i++) {
+      for (let j = 0; j < size - 4; j++) {
+        // 우하향 대각선
+        totalScore += evaluateLine([b[i][j], b[i+1][j+1], b[i+2][j+2], b[i+3][j+3], b[i+4][j+4]]);
+        // 우상향 대각선
+        totalScore += evaluateLine([b[i+4][j], b[i+3][j+1], b[i+2][j+2], b[i+1][j+3], b[i][j+4]]);
+      }
+    }
+    return totalScore;
+  }
+  
+  // 미니맥스 알고리즘 (알파-베타 프루닝 및 시간 제한 포함)
+  function minimax(b, depth, alpha, beta, maximizing, startTimeForAiMove, maxAllowedTimeForAiMove) {
+    // 시간 초과 시 또는 깊이 0 도달 시 현재 보드 평가 점수 반환
+    if (depth === 0 || Date.now() - startTimeForAiMove > maxAllowedTimeForAiMove) {
+      return evaluateBoard(b);
+    }
+
+    const moves = generateMoves(b);
+    if (moves.length === 0) return 0; // 더 이상 둘 곳이 없으면 0점
+
+    if (maximizing) { // AI 턴 (최대화)
+      let maxEval = -Infinity;
+      for (const move of moves) {
+        const newBoard = b.map(r => r.slice()); // 보드 복사
+        newBoard[move.y][move.x] = aiColor; // AI 돌 놓기 시뮬레이션
+        if (isWinBoard(newBoard, move.x, move.y, aiColor)) return 1000000; // AI가 이기면 매우 높은 점수 반환
+        
+        const evalScore = minimax(newBoard, depth - 1, alpha, beta, false, startTimeForAiMove, maxAllowedTimeForAiMove);
+        maxEval = Math.max(maxEval, evalScore);
+        alpha = Math.max(alpha, evalScore);
+        if (beta <= alpha) break; // 알파-베타 프루닝
+      }
+      return maxEval;
+    } else { // 플레이어 턴 (최소화)
+      let minEval = Infinity;
+      for (const move of moves) {
+        const newBoard = b.map(r => r.slice());
+        newBoard[move.y][move.x] = playerColor; // 플레이어 돌 놓기 시뮬레이션
+        if (isWinBoard(newBoard, move.x, move.y, playerColor)) return -1000000; // 플레이어가 이기면 매우 낮은 점수 반환
+        
+        const evalScore = minimax(newBoard, depth - 1, alpha, beta, true, startTimeForAiMove, maxAllowedTimeForAiMove);
+        minEval = Math.min(minEval, evalScore);
+        beta = Math.min(beta, evalScore);
+        if (beta <= alpha) break; // 알파-베타 프루닝
+      }
+      return minEval;
+    }
+  }
+
+  // 플레이어가 필승수를 가지고 있는지 (오픈 4 또는 더블 3) 확인
   function hasForcedWin(currentBoard, playerColorToCheck) {
-      let immediateWinningMovesCount = 0;
-      const potentialMoves = generateMoves(currentBoard); // Get all empty spots
+      const potentialMoves = generateMoves(currentBoard); // 모든 빈 칸 가져오기
 
       for (const move of potentialMoves) {
           const tempBoard = currentBoard.map(row => row.slice());
           tempBoard[move.y][move.x] = playerColorToCheck;
+          // 이 수가 놓였을 때 5목이 되는지 확인
           if (isWinBoard(tempBoard, move.x, move.y, playerColorToCheck)) {
-              immediateWinningMovesCount++;
+              return true; // 플레이어가 다음 한 수로 바로 이길 수 있는 수가 있다면 true 반환
           }
       }
-
-      // If player has one open four, it's a win.
-      // If player has two or more distinct immediate winning moves (double-4), it's a forced win.
-      // This covers the "오픈4" and critical "막힌4" (those that become an immediate win).
-      if (immediateWinningMovesCount >= 1) return true; // Player can win in one move.
-      
-      // For "더블 쓰리" (double three), it's more complex. A simple count of open threes
-      // is not enough to guarantee a double three. This often requires simulating player moves
-      // and checking if they lead to multiple win threats.
-      // Given the current structure, a full double-three detection is beyond `hasForcedWin` scope without a deeper search.
-      // However, the `evaluateLine` scoring for open three (`s -= 5e4`) should help AI block them.
-
-      // For a simple surrender rule, let's consider only immediate winning moves (open fours) or double fours.
-      // The `immediateWinningMovesCount` being >= 1 already means player has at least one open four equivalent.
-      // If `immediateWinningMovesCount >= 2` it implies a double four.
-      // So, if player has any way to win immediately, AI surrenders.
-      return false; // No forced win detected for the player
+      return false; // 필승수 없음
   }
 
-
-  // aiMove 함수를 반복적 깊이 확장을 사용하고 동적 시간 제한 적용
-  aiMove=function(){
+  // AI 턴 실행
+  function aiMove() {
     if (gameOver) return;
 
-    // AI Surrender Rule: Check if player has an unblockable winning threat (open 4 or double 3)
-    if (hasForcedWin(board, playerColor)) {
-        showMessage("AI 항복: 플레이어가 필승수를 가지고 있습니다!");
+    const startTime = Date.now(); // AI 턴 시작 시간 기록
+    const candidateMoves = generateMoves(board); // 가능한 모든 수 생성
+    if (candidateMoves.length === 0) { // 더 이상 둘 곳이 없으면 무승부
+        showMessage("무승부!");
         gameOver = true;
         updateTurnIndicator();
-        return; // AI surrenders
+        return;
     }
-
-    const startTime=Date.now(); // AI 턴 시작 시간 기록
-    const candidateMoves=generateMoves(board); // 가능한 모든 수 생성
-    if(candidateMoves.length===0)return showMessage("무승부!"),void(gameOver=!0);
 
     let currentAIMoveTimeLimit; // AI 턴 전체에 할당된 시간 (ms)
     const minimaxTimeBuffer = 500; // minimax 함수가 실제 탐색을 수행할 시간 (AI 턴 전체 시간 - 버퍼)
@@ -490,7 +580,7 @@
     const minimaxAllowedTime = currentAIMoveTimeLimit - minimaxTimeBuffer;
 
 
-    // 13, 15, 19 격자에서 AI의 첫 2수 제한
+    // 13, 15, 19 격자에서 AI의 첫 2수 제한 (중앙 5x5 범위)
     if ((size === 13 || size === 15 || size === 19) && history.length <= 1) {
       const center_x = Math.floor(size / 2);
       const center_y = Math.floor(size / 2);
@@ -546,22 +636,24 @@
 
     let bestMove = candidateMoves[0]; // 초기 최선의 수를 첫 번째 후보로 설정
     
-    // AI의 즉각적인 승리 확인
+    // 1. AI 자신의 즉각적인 승리 확인
     for(const move of candidateMoves){
         const testBoard = board.map(row => row.slice());
         testBoard[move.y][move.x] = aiColor;
         if(isWinBoard(testBoard, move.x, move.y, aiColor)){
-            return placeAndCheckWin(move.x, move.y, aiColor); // AI가 이기는 수 발견 시 즉시 착수
+            placeAndCheckWin(move.x, move.y, aiColor); // AI가 이기는 수 발견 시 즉시 착수
+            return;
         }
     }
 
-    // 플레이어의 즉각적인 승리 방지 최우선
+    // 2. 플레이어의 즉각적인 승리 방지 최우선
     for(const move of candidateMoves){
         const testBoard = board.map(row => row.slice());
         testBoard[move.y][move.x] = playerColor; // 플레이어가 이 위치에 두면 어떻게 되는지 시뮬레이션
         if(isWinBoard(testBoard, move.x, move.y, playerColor)){
-            bestMove = move; // 상대방의 승리를 막는 수 발견 시, 그 수를 최선으로 설정 후 착수
-            return placeAndCheckWin(bestMove.x, bestMove.y, aiColor);
+            bestMove = move; // 상대방의 승리를 막는 수 발견 시, 그 수를 최선으로 설정
+            placeAndCheckWin(bestMove.x, bestMove.y, aiColor);
+            return;
         }
     }
 
@@ -604,7 +696,7 @@
                 lastValidBestMove = bestMoveForCurrentDepth; // 최선수 업데이트
             }
             currentDepth++; // 다음 반복에서 더 깊이 탐색
-            if (currentDepth > 5) { // 무한정 깊어지는 것을 방지하기 위한 최대 깊이 제한
+            if (currentDepth > 5) { // 무한정 깊어지는 것을 방지하기 위한 최대 깊이 제한 (성능 고려)
                 break; 
             }
         }
@@ -614,71 +706,66 @@
     bestMove = lastValidBestMove || candidateMoves[0]; 
 
     placeAndCheckWin(bestMove.x, bestMove.y, aiColor);
-  };
 
-  /**
-   * ✅ 수정된 함수 1: placeAndCheckWin
-   * 플레이어 변경 후 턴 표시를 즉시 업데이트하도록 수정
-   */
-  function placeAndCheckWin(x, y, color) {
-    placeStone(x, y, color);
-    if (checkWin(x, y)) {
-        showMessage( (color === playerColor ? "플레이어" : "AI") + " 승리!");
-        gameOver = true;
-        updateTurnIndicator(); 
-    } else {
-        currentPlayer = (color === playerColor) ? aiColor : playerColor;
-        drawBoard(); // 마커를 다시 그리기 위해 drawBoard 호출
-        updateTurnIndicator();
-    }
   }
 
+
   // --- 이벤트 핸들러 ---
-  /**
-   * ✅ 수정된 함수 2: handleClick
-   * placeAndCheckWin에서 턴 표시를 업데이트하므로 중복되는 코드 제거
-   */
   function handleClick(e) {
-    if (gameOver || currentPlayer !== playerColor) return;
-    e.preventDefault();
-    initAudio(); 
+    if (gameOver || currentPlayer !== playerColor) return; // 게임 오버이거나 AI 턴이면 클릭 무시
+    e.preventDefault(); // 터치 이벤트 기본 동작 방지
 
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width; const scaleY = canvas.height / rect.height;
+    initAudio(); // 오디오 컨텍스트 초기화 (첫 사용자 상호작용 시)
+
+    const rect = canvas.getBoundingClientRect(); // 캔버스의 화면상 위치와 크기
+    const scaleX = canvas.width / rect.width; 
+    const scaleY = canvas.height / rect.height;
     
+    // 클릭 또는 터치 좌표 가져오기
     let clientX, clientY;
-    if (e.touches) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
-    else { clientX = e.clientX; clientY = e.clientY; }
+    if (e.touches) { // 터치 이벤트인 경우
+      clientX = e.touches[0].clientX; 
+      clientY = e.touches[0].clientY; 
+    } else { // 마우스 클릭 이벤트인 경우
+      clientX = e.clientX; 
+      clientY = e.clientY; 
+    }
     
-    const x = (clientX - rect.left) * scaleX; const y = (clientY - rect.top) * scaleY;
-    const cx = Math.floor(x / cellSize); const cy = Math.floor(y / cellSize);
-
-    if (!canPlace(cx, cy)) return;
+    // 캔버스 내의 클릭/터치 위치 계산
+    const x = (clientX - rect.left) * scaleX; 
+    const y = (clientY - rect.top) * scaleY;
     
-    placeAndCheckWin(cx, cy, playerColor);
+    // 바둑판 격자 좌표로 변환
+    const cx = Math.floor(x / cellSize); 
+    const cy = Math.floor(y / cellSize);
 
-    if (!gameOver) {
-      setTimeout(aiMove, 100);
+    // placeAndCheckWin 함수에서 이미 canPlace 검사를 수행하므로 여기서는 제거
+    // if (!canPlace(cx, cy)) return; // 돌을 놓을 수 없는 위치면 무시
+    
+    placeAndCheckWin(cx, cy, playerColor); // 돌 놓고 승리 여부 확인 및 턴 전환
+
+    if (!gameOver) { // 게임이 끝나지 않았으면 AI 턴 시작
+      setTimeout(aiMove, 100); // 딜레이 후 AI 턴 실행
     }
   }
   
   function showMessage(msg) {
     messageText.textContent = msg;
-    messageBox.style.display = 'flex';
+    messageBox.style.display = 'flex'; // 메시지 박스 보이게
   }
 
   // --- 이벤트 리스너 등록 ---
   canvas.addEventListener('mousedown', handleClick);
-  canvas.addEventListener('touchstart', handleClick);
+  canvas.addEventListener('touchstart', handleClick); // 터치 이벤트 추가
   undoBtn.addEventListener('click', undo);
   resetBtn.addEventListener('click', resetGame);
   playerColorSelect.addEventListener('change', resetGame);
   boardSizeSelect.addEventListener('change', resetGame); 
-  messageCloseBtn.addEventListener('click', () => { messageBox.style.display = 'none'; });
-  window.addEventListener('resize', drawBoard);
+  messageCloseBtn.addEventListener('click', () => { messageBox.style.display = 'none'; }); // 메시지 박스 닫기
+  window.addEventListener('resize', drawBoard); // 창 크기 변경 시 보드 다시 그리기
 
   // --- 초기화 ---
-  resetGame();
+  resetGame(); // 페이지 로드 시 게임 초기화
 
 })();
 </script>
